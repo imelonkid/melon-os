@@ -1,0 +1,3 @@
+adapter_ref: home_assistant
+base_url: http://homeassistant.local:8123
+token_ref: secret://ha_token

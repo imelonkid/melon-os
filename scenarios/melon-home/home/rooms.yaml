@@ -1,0 +1,11 @@
+- id: living_room
+  name: Living Room
+  type: living_room
+
+- id: bedroom
+  name: Bedroom
+  type: bedroom
+
+- id: study
+  name: Study
+  type: study

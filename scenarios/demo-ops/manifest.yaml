@@ -1,0 +1,15 @@
+id: demo.ops
+name: Demo Ops
+version: 0.1.0
+description: Alpha validation scenario pack - no hardware required
+author: melonOS
+runtime: ">=0.1.0"
+entry: workflows/default.yaml
+permissions:
+  - read_files
+  - write_workspace
+  - mock_tool_call
+dependencies:
+  mcp:
+    - mock_service
+  skills: []

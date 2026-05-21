@@ -1,0 +1,12 @@
+layout:
+  default: home_dashboard
+views:
+  - id: chat
+    type: chat
+    region: left
+  - id: dashboard
+    type: device_panel
+    region: main
+  - id: trace
+    type: task_graph
+    region: bottom

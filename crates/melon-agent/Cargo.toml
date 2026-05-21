@@ -1,0 +1,19 @@
+[package]
+name = "melon-agent"
+version = "0.1.0"
+edition = "2021"
+description = "Agent Layer - task graph, planner, executor"
+
+[dependencies]
+melon-scenario = { path = "../melon-scenario" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sqlx = { workspace = true }

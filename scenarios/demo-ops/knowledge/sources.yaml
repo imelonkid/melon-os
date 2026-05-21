@@ -1,0 +1,5 @@
+sources:
+  - id: inspection_runbook
+    uri: knowledge/fixtures/inspection_runbook.md
+    type: file
+    description: System inspection procedures and troubleshooting guide

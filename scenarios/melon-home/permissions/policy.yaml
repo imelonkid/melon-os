@@ -1,0 +1,24 @@
+policies:
+  light_control:
+    default: allow
+    scopes:
+      - home
+  plug_control:
+    default: ask
+    scopes:
+      - home
+  sensor_read:
+    default: allow
+    scopes:
+      - home
+  lock_control:
+    default: deny
+    scopes:
+      - home
+  camera_view:
+    default: ask
+    scopes:
+      - home
+audit:
+  enabled: true
+  retain_days: 90

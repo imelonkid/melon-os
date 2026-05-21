@@ -1,0 +1,15 @@
+layout:
+  default: ops_workspace
+views:
+  - id: chat
+    type: chat
+    region: left
+  - id: report
+    type: document
+    region: main
+  - id: status
+    type: table
+    region: right
+  - id: trace
+    type: task_graph
+    region: bottom

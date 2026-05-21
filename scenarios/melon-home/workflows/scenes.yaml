@@ -1,0 +1,12 @@
+name: default_home
+steps:
+  - id: parse_intent
+    type: agent.parse_intent
+  - id: resolve_entity
+    type: agent.resolve_entity
+  - id: check_permission
+    type: governance.check
+  - id: execute_action
+    type: tool.home_assistant_call
+  - id: update_state
+    type: ui.update

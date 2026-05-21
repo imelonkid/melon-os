@@ -1,0 +1,15 @@
+[package]
+name = "melon-permission"
+version = "0.1.0"
+edition = "2021"
+description = "Governance Layer - policy engine, approval, audit"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }

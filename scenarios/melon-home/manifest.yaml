@@ -1,0 +1,14 @@
+id: melon.home
+name: melon Home
+version: 0.1.0
+description: Home automation scenario - Beta validation pack
+author: melonOS
+runtime: ">=0.1.0"
+entry: workflows/scenes.yaml
+permissions:
+  - light_control
+  - read_sensor
+dependencies:
+  mcp:
+    - home_assistant
+  skills: []

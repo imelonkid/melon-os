@@ -1,0 +1,13 @@
+[package]
+name = "melon-mcp"
+version = "0.1.0"
+edition = "2021"
+description = "MCP client/server implementation"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

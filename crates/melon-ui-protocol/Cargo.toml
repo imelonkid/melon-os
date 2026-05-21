@@ -1,0 +1,12 @@
+[package]
+name = "melon-ui-protocol"
+version = "0.1.0"
+edition = "2021"
+description = "Adaptive UI Protocol - panel types, data schema, layout spec"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }

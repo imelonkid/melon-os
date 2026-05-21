@@ -1,0 +1,16 @@
+policies:
+  read_status:
+    default: allow
+    scopes:
+      - workspace
+  write_cleanup:
+    default: ask
+    scopes:
+      - workspace
+  network:
+    default: ask
+  shell:
+    default: deny
+audit:
+  enabled: true
+  retain_days: 90

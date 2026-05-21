@@ -1,0 +1,25 @@
+name: daily_inspection
+steps:
+  - id: generate_checklist
+    type: agent.generate_checklist
+  - id: check_services
+    type: tool
+    action: mock_check_service
+    policy_action: read_status
+  - id: check_storage
+    type: tool
+    action: mock_check_storage
+    policy_action: read_status
+  - id: check_network
+    type: tool
+    action: mock_check_network
+    policy_action: read_status
+  - id: analyze_results
+    type: agent.analyze
+  - id: cleanup_temp
+    type: tool
+    action: mock_cleanup_temp
+    policy_action: write_cleanup
+    approval: cleanup_temp_files
+  - id: generate_report
+    type: ui.document

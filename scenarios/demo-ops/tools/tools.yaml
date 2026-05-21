@@ -1,0 +1,39 @@
+- id: mock_check_service
+  type: cli
+  command: 'echo "all services running"'
+  permissions:
+    - read_status
+  healthcheck:
+    command: 'echo "ok"'
+  startup:
+    mode: on_demand
+
+- id: mock_check_storage
+  type: cli
+  command: 'echo "storage warning: disk usage 85%"'
+  permissions:
+    - read_status
+  healthcheck:
+    command: 'echo "ok"'
+  startup:
+    mode: on_demand
+
+- id: mock_check_network
+  type: cli
+  command: 'echo "network healthy"'
+  permissions:
+    - read_status
+  healthcheck:
+    command: 'echo "ok"'
+  startup:
+    mode: on_demand
+
+- id: mock_cleanup_temp
+  type: cli
+  command: 'echo "temp files cleaned"'
+  permissions:
+    - write_cleanup
+  healthcheck:
+    command: 'echo "ok"'
+  startup:
+    mode: on_demand

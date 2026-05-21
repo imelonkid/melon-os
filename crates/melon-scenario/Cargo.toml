@@ -1,0 +1,17 @@
+[package]
+name = "melon-scenario"
+version = "0.1.0"
+edition = "2021"
+description = "Scenario Pack schema definition, validation, and loader"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+schemars = { workspace = true }
+jsonschema = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
