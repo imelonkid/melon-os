@@ -61,7 +61,6 @@ async fn run_pack(
         db: state.db.clone(),
         pack_dir,
         task_id: task_id.clone(),
-        approval_channels: state.approval_channels.clone(),
     };
 
     tokio::spawn(async move {

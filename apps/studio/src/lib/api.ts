@@ -103,3 +103,42 @@ export async function checkHealth(): Promise<{ status: string; version: string }
     return { status: 'disconnected', version: '' }
   }
 }
+
+export interface AuditLogEntry {
+  id: string
+  task_id: string
+  scenario_id: string
+  action: string
+  input_summary: string
+  output_summary: string
+  approval_status: string
+  timestamp: string
+}
+
+export interface EvalSummary {
+  task_id: string
+  scenario_id: string
+  total: number
+  passed: number
+  failed: number
+  results: {
+    case_id: string
+    goal: string
+    passed: boolean
+    details: string[]
+  }[]
+}
+
+export async function getAuditLogs(taskId: string): Promise<AuditLogEntry[]> {
+  const res = await fetch(`${RUNTIME_URL}/api/tasks/${taskId}/audit`)
+  if (!res.ok) throw new Error(`Failed to get audit logs: ${res.status}`)
+  return res.json()
+}
+
+export async function runEval(taskId: string): Promise<EvalSummary> {
+  const res = await fetch(`${RUNTIME_URL}/api/tasks/${taskId}/eval`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(`Failed to run eval: ${res.status}`)
+  return res.json()
+}

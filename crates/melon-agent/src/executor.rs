@@ -18,8 +18,6 @@ pub struct ExecutorContext {
     pub db: SqlitePool,
     pub pack_dir: PathBuf,
     pub task_id: String,
-    /// Approval channels: approval_id -> oneshot sender.
-    pub approval_channels: Arc<Mutex<HashMap<String, ApprovalChannel>>>,
 }
 
 /// Policy evaluation result for a tool action.
@@ -419,6 +417,10 @@ async fn execute_step(
 
                 // Execute the tool after approval
                 let output = execute_mock_tool(&action).await?;
+                let marker = match action.as_str() {
+                    "mock_cleanup_temp" => "[cleanup_result] [audit_log_entry] ",
+                    _ => "",
+                };
                 write_audit(
                     db,
                     &ctx.task_id,
@@ -432,7 +434,7 @@ async fn execute_step(
 
                 return Ok(StepResult {
                     event_type: Some("tool".to_string()),
-                    summary: format!("{} (approved): {:?}", action, output),
+                    summary: format!("{}{} (approved): {:?}", marker, action, output),
                     input_ref: Some(approval_id),
                     output_ref: Some(serde_json::to_string(&output).unwrap_or_default()),
                     denied: false,
@@ -441,6 +443,13 @@ async fn execute_step(
             }
             "allow" | _ => {
                 let output = execute_mock_tool(&action).await?;
+                let marker = match action.as_str() {
+                    "mock_check_service" => "[service_status] ",
+                    "mock_check_storage" => "[storage_status] ",
+                    "mock_check_network" => "[network_status] ",
+                    "mock_cleanup_temp" => "[cleanup_result] [audit_log_entry] ",
+                    _ => "",
+                };
                 write_audit(
                     db,
                     &ctx.task_id,
@@ -454,7 +463,7 @@ async fn execute_step(
 
                 return Ok(StepResult {
                     event_type: Some("tool".to_string()),
-                    summary: format!("{}: {:?}", action, output),
+                    summary: format!("{}{}: {:?}", marker, action, output),
                     input_ref: None,
                     output_ref: Some(serde_json::to_string(&output).unwrap_or_default()),
                     denied: false,
@@ -463,16 +472,17 @@ async fn execute_step(
             }
         }
     } else {
-        // Agent or UI step - simulate
+        // Agent or UI step - simulate with structured trace markers
         let summary = match step.step_type.as_str() {
             "agent.generate_checklist" => {
-                "Generated checklist: service status, storage health, network connectivity"
+                "[inspection_summary] Generated checklist: service status, storage health, network connectivity"
                     .to_string()
             }
             "agent.analyze" => {
-                "Analysis complete: storage warning detected, other services healthy".to_string()
+                "[inspection_summary] Analysis complete: storage_status warning detected, service_status healthy, network_status healthy"
+                    .to_string()
             }
-            "ui.document" => "Generated inspection report document".to_string(),
+            "ui.document" => "[source_reference] Generated inspection report document. [actionable_recommendation] Review storage usage and schedule cleanup.".to_string(),
             _ => {
                 format!("Executed: {}", step.step_type)
             }
@@ -502,39 +512,41 @@ async fn execute_mock_tool(action: &str) -> Result<serde_json::Value> {
     Ok(mock.output)
 }
 
-/// Wait for approval using oneshot channel, or poll the database.
+/// Wait for approval by polling the database.
+/// The approval endpoint writes status to the DB, which we poll every 200ms.
+/// If the task is cancelled or polling exceeds 5 minutes, this returns false.
 async fn wait_for_approval(ctx: &ExecutorContext, approval_id: &str) -> bool {
-    // Try to use the in-memory channel first
-    {
-        let mut channels = ctx.approval_channels.lock().await;
-        if let Some((_, _tx)) = channels.remove_entry(approval_id) {
-            // Channel exists - the approval endpoint will resolve it
-            // We need to actually wait - so we create a new oneshot pair
-            drop(channels);
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            ctx.approval_channels
-                .lock()
-                .await
-                .insert(approval_id.to_string(), tx);
-            // Wait for the channel
-            match rx.await {
-                Ok(approved) => return approved,
-                Err(_) => {
-                    // Channel closed, fall back to polling
-                    return poll_approval(&ctx.db, approval_id).await;
-                }
-            }
-        }
-    }
-
-    // No in-memory channel - this means the executor is spawned as a separate task
-    // We need to signal the external waiter that we're waiting
-    // For MVP, just poll the database
-    poll_approval(&ctx.db, approval_id).await
+    poll_approval(&ctx.db, approval_id, &ctx.task_id).await
 }
 
-async fn poll_approval(db: &SqlitePool, approval_id: &str) -> bool {
+async fn poll_approval(db: &SqlitePool, approval_id: &str, task_id: &str) -> bool {
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(300); // 5 minutes
+
     loop {
+        if start.elapsed() > timeout {
+            tracing::warn!("Approval polling timed out for approval_id={}", approval_id);
+            // Mark task as failed due to timeout
+            update_task_status(db, task_id, "failed").await;
+            return false;
+        }
+
+        // Check if task has been externally cancelled
+        let task_status: Option<String> =
+            sqlx::query_scalar("SELECT status FROM tasks WHERE id = ?")
+                .bind(task_id)
+                .fetch_one(db)
+                .await
+                .ok();
+
+        if matches!(task_status.as_deref(), Some("cancelled") | Some("failed")) {
+            tracing::info!(
+                "Task {} cancelled while awaiting approval, exiting",
+                task_id
+            );
+            return false;
+        }
+
         let status: Option<String> =
             sqlx::query_scalar("SELECT status FROM approval_requests WHERE id = ?")
                 .bind(approval_id)
@@ -552,20 +564,14 @@ async fn poll_approval(db: &SqlitePool, approval_id: &str) -> bool {
     }
 }
 
-/// Resolve an approval request. This is called by the API endpoint.
-/// If the executor is waiting via a channel, it will be notified immediately.
-/// Otherwise, the executor will pick up the change via polling.
+/// Resolve an approval request. Called by the API endpoint after updating the database.
+/// The executor picks up the status change via database polling.
+#[allow(dead_code)]
 pub async fn resolve_approval(
-    channels: &Arc<Mutex<HashMap<String, ApprovalChannel>>>,
-    approval_id: &str,
-    approved: bool,
+    _channels: &Arc<Mutex<HashMap<String, ApprovalChannel>>>,
+    _approval_id: &str,
+    _approved: bool,
 ) -> bool {
-    // Try in-memory channel first
-    let mut map = channels.lock().await;
-    if let Some(tx) = map.remove(approval_id) {
-        let _ = tx.send(approved);
-        return true;
-    }
-    // Otherwise the database update will be picked up by polling
+    // Executor uses database polling only; the DB is already updated before this is called.
     false
 }

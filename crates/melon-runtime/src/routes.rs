@@ -1,3 +1,5 @@
+pub mod audit;
+pub mod eval;
 pub mod files;
 pub mod packs;
 pub mod run;

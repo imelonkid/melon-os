@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom'
 import Editor from '@monaco-editor/react'
 import {
   runPack, getTask, getTraces, getApprovals, resolveApproval,
-  type TraceEvent, type ApprovalItem
+  getAuditLogs, runEval,
+  type TraceEvent, type ApprovalItem, type AuditLogEntry, type EvalSummary
 } from '../lib/api'
 
 const RUNTIME_URL = ''
@@ -55,6 +56,10 @@ export default function PackEditor() {
   const [taskStatus, setTaskStatus] = useState<string>('')
   const [traces, setTraces] = useState<TraceEvent[]>([])
   const [approvals, setApprovals] = useState<ApprovalItem[]>([])
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
+  const [evalResult, setEvalResult] = useState<EvalSummary | null>(null)
+  const [evalRunning, setEvalRunning] = useState(false)
+  const [debugTab, setDebugTab] = useState<'trace' | 'audit' | 'eval'>('trace')
   const [showDebug, setShowDebug] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -186,6 +191,9 @@ export default function PackEditor() {
       setTaskId(result.task_id)
       setTaskStatus(result.status)
       setShowDebug(true)
+      setDebugTab('trace')
+      setAuditLogs([])
+      setEvalResult(null)
       refreshTask()
     } catch (e: any) {
       alert(e?.message || 'Failed to run pack')
@@ -218,6 +226,31 @@ export default function PackEditor() {
       alert(e?.message || 'Failed to resolve approval')
     }
   }, [taskId, refreshTask])
+
+  const handleRunEval = useCallback(async () => {
+    if (!taskId) return
+    setEvalRunning(true)
+    try {
+      const result = await runEval(taskId)
+      setEvalResult(result)
+      setDebugTab('eval')
+    } catch (e: any) {
+      alert(e?.message || 'Failed to run eval')
+    } finally {
+      setEvalRunning(false)
+    }
+  }, [taskId])
+
+  const handleLoadAudit = useCallback(async () => {
+    if (!taskId) return
+    try {
+      const logs = await getAuditLogs(taskId)
+      setAuditLogs(logs)
+      setDebugTab('audit')
+    } catch {
+      // Audit endpoint may not be available
+    }
+  }, [taskId])
 
   const currentLang = activeFile ? getLang(activeFile) : 'yaml'
 
@@ -465,38 +498,168 @@ export default function PackEditor() {
             </button>
           </div>
 
-          {/* Panel body: traces + approvals side by side */}
+          {/* Panel body: tabs for trace / audit / eval + approvals */}
           <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-            {/* Trace events */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
-              <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>Trace Events</div>
-              {traces.map((t, i) => {
-                const color = t.event_type === 'system' ? '#888'
-                  : t.event_type === 'tool' ? '#60a5fa'
-                  : t.event_type === 'agent' ? '#a78bfa'
-                  : t.event_type === 'approval' ? '#f59e0b'
-                  : '#888'
-                return (
-                  <div key={t.id} style={{
-                    display: 'flex',
-                    gap: 8,
-                    padding: '3px 0',
-                    fontSize: 12,
-                    fontFamily: 'monospace',
-                    color: '#ccc',
-                  }}>
-                    <span style={{ color: '#555', minWidth: 16 }}>{i + 1}</span>
-                    <span style={{ color, minWidth: 50, textTransform: 'uppercase', fontSize: 10 }}>{t.event_type}</span>
-                    <span style={{ flex: 1, wordBreak: 'break-all' }}>{t.summary}</span>
+            {/* Left side: tabbed content */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+              {/* Tabs */}
+              <div style={{
+                display: 'flex',
+                gap: 0,
+                borderBottom: '1px solid #2a2a2a',
+                padding: '0 12px',
+              }}>
+                {(['trace', 'audit', 'eval'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => {
+                      if (tab === 'audit') handleLoadAudit()
+                      if (tab === 'eval' && !evalResult) handleRunEval()
+                      setDebugTab(tab)
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      borderBottom: debugTab === tab ? '2px solid #3b82f6' : '2px solid transparent',
+                      color: debugTab === tab ? '#fff' : '#888',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      padding: '6px 12px',
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {tab === 'eval' && evalRunning ? 'Running...' : tab}
+                    {tab === 'eval' && evalResult && ` (${evalResult.passed}/${evalResult.total})`}
+                    {tab === 'audit' && auditLogs.length > 0 && ` (${auditLogs.length})`}
+                  </button>
+                ))}
+              </div>
+
+              {/* Trace tab */}
+              {debugTab === 'trace' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+                  <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>Trace Events</div>
+                  {traces.map((t, i) => {
+                    const color = t.event_type === 'system' ? '#888'
+                      : t.event_type === 'tool' ? '#60a5fa'
+                      : t.event_type === 'agent' ? '#a78bfa'
+                      : t.event_type === 'approval' ? '#f59e0b'
+                      : '#888'
+                    return (
+                      <div key={t.id} style={{
+                        display: 'flex',
+                        gap: 8,
+                        padding: '3px 0',
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                        color: '#ccc',
+                      }}>
+                        <span style={{ color: '#555', minWidth: 16 }}>{i + 1}</span>
+                        <span style={{ color, minWidth: 50, textTransform: 'uppercase', fontSize: 10 }}>{t.event_type}</span>
+                        <span style={{ flex: 1, wordBreak: 'break-all' }}>{t.summary}</span>
+                      </div>
+                    )
+                  })}
+                  {traces.length === 0 && (
+                    <div style={{ fontSize: 12, color: '#666', padding: 8 }}>Waiting for events...</div>
+                  )}
+                </div>
+              )}
+
+              {/* Audit tab */}
+              {debugTab === 'audit' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+                  <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>Audit Log</div>
+                  {auditLogs.length > 0 ? auditLogs.map((log, i) => (
+                    <div key={log.id} style={{
+                      display: 'flex',
+                      gap: 8,
+                      padding: '4px 0',
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                      borderBottom: '1px solid #1e1e1e',
+                    }}>
+                      <span style={{ color: '#555', minWidth: 16 }}>{i + 1}</span>
+                      <span style={{ color: '#4ade80', minWidth: 100 }}>{log.action}</span>
+                      <span style={{ color: '#888', minWidth: 60, textTransform: 'uppercase', fontSize: 10 }}>{log.approval_status}</span>
+                      <span style={{ flex: 1, color: '#ccc', wordBreak: 'break-all' }}>{log.input_summary}</span>
+                      <span style={{ color: '#555', fontSize: 11 }}>{new Date(log.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                  )) : (
+                    <div style={{ fontSize: 12, color: '#666', padding: 8 }}>No audit logs yet</div>
+                  )}
+                </div>
+              )}
+
+              {/* Eval tab */}
+              {debugTab === 'eval' && (
+                <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: '#666' }}>Eval Results</div>
+                    <button
+                      onClick={handleRunEval}
+                      disabled={evalRunning}
+                      style={{
+                        background: 'none',
+                        border: '1px solid #333',
+                        color: '#888',
+                        cursor: evalRunning ? 'wait' : 'pointer',
+                        fontSize: 11,
+                        padding: '2px 8px',
+                        borderRadius: 4,
+                      }}
+                    >
+                      {evalRunning ? 'Running...' : 'Run Eval'}
+                    </button>
                   </div>
-                )
-              })}
-              {traces.length === 0 && (
-                <div style={{ fontSize: 12, color: '#666', padding: 8 }}>Waiting for events...</div>
+                  {evalResult ? (
+                    <>
+                      <div style={{
+                        display: 'flex', gap: 16, marginBottom: 12,
+                        fontSize: 13, fontFamily: 'monospace',
+                      }}>
+                        <span style={{ color: '#fff' }}>Total: {evalResult.total}</span>
+                        <span style={{ color: '#4ade80' }}>Passed: {evalResult.passed}</span>
+                        <span style={{ color: '#f87171' }}>Failed: {evalResult.failed}</span>
+                      </div>
+                      {evalResult.results.map(r => (
+                        <div key={r.case_id} style={{
+                          background: '#1e1e1e',
+                          borderRadius: 6,
+                          padding: 10,
+                          marginBottom: 8,
+                          border: `1px solid ${r.passed ? '#22c55e44' : '#ef444444'}`,
+                        }}>
+                          <div style={{
+                            fontSize: 12,
+                            color: r.passed ? '#4ade80' : '#f87171',
+                            fontWeight: 600,
+                            marginBottom: 4,
+                          }}>
+                            {r.passed ? 'PASS' : 'FAIL'} — {r.case_id}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>{r.goal}</div>
+                          {r.details.map((d, i) => (
+                            <div key={i} style={{
+                              fontSize: 11,
+                              fontFamily: 'monospace',
+                              color: d.includes('NOT found') || d.includes('found (bad)') ? '#f87171' : '#4ade80',
+                              padding: '1px 0',
+                            }}>
+                              {d}
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#666', padding: 8 }}>Click "Run Eval" to evaluate</div>
+                  )}
+                </div>
               )}
             </div>
 
-            {/* Approvals */}
+            {/* Approvals (always visible when pending) */}
             {approvals.length > 0 && (
               <div style={{
                 width: 280,
