@@ -2,6 +2,8 @@
 
 > Agent-native application substrate for building, running, debugging, and auditing scenario packs.
 
+**English** | [简体中文](README.zh-CN.md)
+
 [![Rust](https://img.shields.io/badge/Rust-stable-orange?logo=rust)](https://www.rust-lang.org/)
 [![React](https://img.shields.io/badge/React-19-61dafb?logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://www.typescriptlang.org/)
