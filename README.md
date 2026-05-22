@@ -44,6 +44,37 @@ melonOS is in active Alpha development. The current validated scenario is `demo.
 
 See [doc/requirements.md](doc/requirements.md) for the detailed requirement breakdown and priority order.
 
+## Architecture
+
+```mermaid
+flowchart TB
+    Dev["Developer / Integrator"] --> Studio["melon Studio<br/>Pack editor, validation, Run/Debug"]
+    Studio --> Pack["Scenario Pack<br/>manifest, workflow, tools, permissions, knowledge, ui, evals"]
+    Pack --> Runtime["melon Runtime"]
+
+    subgraph RuntimeLayers["Runtime Layers"]
+        Kernel["Runtime Kernel<br/>task lifecycle, state, scheduler"]
+        Agent["Agent Layer<br/>planner, executor"]
+        Tools["Tool Layer<br/>registry, adapters, MCP"]
+        Knowledge["Knowledge Layer<br/>sources, search, citations"]
+        UI["Adaptive UI<br/>trace, panels, actions"]
+        Governance["Governance<br/>policy, approval, audit"]
+    end
+
+    Runtime --> Kernel
+    Kernel --> Agent
+    Agent --> Tools
+    Agent --> Knowledge
+    Agent --> UI
+    Governance -.-> Agent
+    Governance -.-> Tools
+    Governance -.-> Knowledge
+    Governance -.-> UI
+
+    Runtime --> Store["SQLite<br/>tasks, traces, approvals, audit, eval"]
+    Runtime --> Targets["Deployment Targets<br/>desktop, browser, server, edge"]
+```
+
 ## Quick Start
 
 ### Prerequisites
@@ -98,14 +129,37 @@ curl -s http://127.0.0.1:8080/api/packs
 
 The expected closed loop is:
 
-```text
-run demo.ops
-  -> task awaiting_approval
-  -> user approves cleanup
-  -> task completed
-  -> trace contains status, cleanup, knowledge, and report markers
-  -> audit contains the approved side-effect path
-  -> eval passes for inspection, approval, and knowledge cases
+```mermaid
+sequenceDiagram
+    participant User
+    participant Studio as melon Studio
+    participant Runtime as melon Runtime
+    participant Agent as Agent Executor
+    participant Tools as Tool Registry
+    participant KB as Knowledge Layer
+    participant DB as SQLite
+
+    User->>Studio: Run demo.ops
+    Studio->>Runtime: POST /api/packs/demo.ops/run
+    Runtime->>DB: create task and trace
+    Runtime->>Agent: start workflow
+    Agent->>Tools: check service, storage, network
+    Tools-->>Agent: mock inspection results
+    Agent->>DB: write status trace events
+    Agent->>Runtime: request cleanup approval
+    Runtime->>DB: store pending approval
+    Runtime-->>Studio: task awaiting_approval
+    User->>Studio: approve cleanup
+    Studio->>Runtime: approval action
+    Runtime->>Agent: resume workflow
+    Agent->>Tools: cleanup temp files
+    Agent->>KB: search inspection runbook
+    KB-->>Agent: source references and recommendation
+    Agent->>DB: write trace and audit logs
+    Runtime-->>Studio: task completed
+    Studio->>Runtime: POST /api/tasks/{task_id}/eval
+    Runtime->>DB: read trace markers
+    Runtime-->>Studio: eval results
 ```
 
 ## Repository Layout
