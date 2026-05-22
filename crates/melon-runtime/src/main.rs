@@ -30,6 +30,7 @@ async fn run_server(addr: SocketAddr, state: AppState) -> Result<()> {
         .merge(melon_runtime::routes::run::router())
         .merge(melon_runtime::routes::audit::router())
         .merge(melon_runtime::routes::eval::router())
+        .merge(melon_runtime::routes::knowledge::router())
         .with_state(state);
 
     info!("melonOS Runtime daemon starting on {}", addr);

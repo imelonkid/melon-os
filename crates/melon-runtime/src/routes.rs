@@ -1,6 +1,7 @@
 pub mod audit;
 pub mod eval;
 pub mod files;
+pub mod knowledge;
 pub mod packs;
 pub mod run;
 pub mod tasks;

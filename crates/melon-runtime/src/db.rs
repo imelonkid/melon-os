@@ -165,6 +165,15 @@ pub async fn init_db(path: &str) -> Result<SqlitePool> {
     .execute(&pool)
     .await?;
 
+    // FTS5 virtual table for full-text search
+    sqlx::query(
+        r#"
+        CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(text, item_id, source_id)
+        "#,
+    )
+    .execute(&pool)
+    .await?;
+
     sqlx::query(
         r#"
         CREATE TABLE IF NOT EXISTS eval_cases (

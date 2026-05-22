@@ -7,6 +7,7 @@ description = "Agent Layer - task graph, planner, executor"
 [dependencies]
 melon-scenario = { path = "../melon-scenario" }
 melon-tools = { path = "../melon-tools" }
+melon-kb = { path = "../melon-kb" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

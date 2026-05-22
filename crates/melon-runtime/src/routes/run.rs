@@ -60,6 +60,19 @@ async fn run_pack(
     .await
     .ok();
 
+    // Ingest knowledge from pack before workflow execution
+    let knowledge_dir = pack_dir.join("knowledge");
+    match melon_kb::ingest_pack(&state.db, &pack_id, &knowledge_dir).await {
+        Ok(count) => {
+            if count > 0 {
+                tracing::info!("Ingested {} knowledge sources for pack {}", count, pack_id);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Knowledge ingestion failed for pack {}: {}", pack_id, e);
+        }
+    }
+
     // Spawn workflow executor as background task
     let mut registry = ToolRegistry::new();
     registry.register_adapter(Arc::new(MockToolAdapter::new()));

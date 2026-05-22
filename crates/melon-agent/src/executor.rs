@@ -448,7 +448,36 @@ async fn execute_step(
                 "[inspection_summary] Analysis complete: storage_status warning detected, service_status healthy, network_status healthy"
                     .to_string()
             }
-            "ui.document" => "[source_reference] Generated inspection report document. [actionable_recommendation] Review storage usage and schedule cleanup.".to_string(),
+            "ui.document" => {
+                let hits = melon_kb::search_keyword_for_scenario(db, scenario_id, "storage cleanup")
+                    .await
+                    .unwrap_or_default();
+
+                if hits.is_empty() {
+                    "[source_reference_missing] No knowledge source matched storage cleanup. [actionable_recommendation_missing] Unable to generate sourced recommendation.".to_string()
+                } else {
+                    let citations: Vec<String> = hits
+                        .iter()
+                        .take(3)
+                        .map(|h| {
+                            format!(
+                                "source_id={} path={} title={}",
+                                h.source_id, h.uri, h.title
+                            )
+                        })
+                        .collect();
+                    let first_excerpt = hits
+                        .first()
+                        .map(|h| h.text.chars().take(120).collect::<String>())
+                        .unwrap_or_default();
+                    format!(
+                        "[source_reference] Retrieved {} knowledge hit(s): citations=[{}]. [actionable_recommendation] Based on sourced runbook excerpt: {}. Review storage usage and schedule cleanup.",
+                        hits.len(),
+                        citations.join("; "),
+                        first_excerpt,
+                    )
+                }
+            }
             _ => {
                 format!("Executed: {}", step.step_type)
             }

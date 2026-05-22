@@ -51,6 +51,7 @@ async fn test_app() -> (Router, AppState) {
         .merge(melon_runtime::routes::run::router())
         .merge(melon_runtime::routes::audit::router())
         .merge(melon_runtime::routes::eval::router())
+        .merge(melon_runtime::routes::knowledge::router())
         .with_state(state.clone());
 
     (app, state)
@@ -1125,4 +1126,94 @@ async fn test_real_demo_ops_eval_passes() {
         summary
     );
     assert_eq!(summary["failed"], 0);
+
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&format!("/api/tasks/{}/traces", task_id))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let traces: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    let trace_text = traces
+        .iter()
+        .filter_map(|trace| trace["summary"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        trace_text.contains("source_id=inspection_runbook")
+            && trace_text.contains("path=knowledge/fixtures/inspection_runbook.md"),
+        "demo-ops report should include real knowledge citation: {}",
+        trace_text
+    );
+}
+
+#[tokio::test]
+async fn test_knowledge_ingestion_and_search() {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace = manifest_dir.parent().unwrap().parent().unwrap();
+    let real_pack_dir = workspace.join("scenarios/demo-ops");
+    if !real_pack_dir.exists() {
+        return;
+    }
+
+    let (app, state) = test_app().await;
+    copy_dir_all(&real_pack_dir, &state.scenarios_dir.join("demo-ops"));
+
+    // Directly ingest knowledge (bypassing run handler to avoid timing issues)
+    let knowledge_dir = state.scenarios_dir.join("demo-ops/knowledge");
+    let count = melon_kb::ingest_pack(&state.db, "demo.ops", &knowledge_dir)
+        .await
+        .expect("ingest pack");
+    assert_eq!(count, 1, "Should ingest 1 source");
+
+    // Verify sources endpoint
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/packs/demo.ops/knowledge/sources")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let sources: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(
+        sources.iter().any(|s| s["id"] == "inspection_runbook"),
+        "Should have inspection_runbook source: {:?}",
+        sources
+    );
+
+    // Verify search endpoint
+    let res = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/api/packs/demo.ops/knowledge/search?q=storage")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(res.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let hits: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
+    assert!(
+        !hits.is_empty(),
+        "Search for 'storage' should return results"
+    );
 }
