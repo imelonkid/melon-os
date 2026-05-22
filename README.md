@@ -1,168 +1,257 @@
 # melonOS
 
-melonOS 是一个面向 AI 原生应用的 agent runtime 与场景操作系统。
+> Agent-native application substrate for building, running, debugging, and auditing scenario packs.
 
-> melonOS = melon Runtime + Scenario Pack + melon Studio + melon Edge
+[![Rust](https://img.shields.io/badge/Rust-stable-orange?logo=rust)](https://www.rust-lang.org/)
+[![React](https://img.shields.io/badge/React-19-61dafb?logo=react)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![Tauri](https://img.shields.io/badge/Tauri-planned-24c8db?logo=tauri)](https://tauri.app/)
+[![Status](https://img.shields.io/badge/status-alpha-yellow)](#project-status)
 
-## 项目定位
-
-melonOS 不是传统操作系统的替代品，而是一套可运行、可组合、可审计、可部署的 **agent-native application substrate**。它通过 scenario pack 机制，让不同业务场景快速装配成可用的 agent app。
-
-## 文档索引
-
-| 文档 | 说明 |
-|---|---|
-| [需求文档](doc/requirements.md) | MVP 需求拆分为 3 个里程碑、42 个 backlog 需求项，并标注 P0/P1 边界 |
-| [技术方案](melonOS%20技术方案.md) | 总体架构、产品分层、技术选型、设计原则 |
-| [MVP 开发计划](melonOS%20MVP%20开发计划.md) | 3 个里程碑、时间线、验收标准、风险对策 |
-| [Home 全屋智能方案](melon%20Home%20全屋智能技术方案.md) | melon Home 作为第一个真实 scenario pack 的技术方案 |
-| [Agents OS 可行性方案](Agents%20OS%20可行性与产品方案.md) | 产品定位、阶段规划、商业模式、差异化分析 |
-
-## MVP 三个里程碑
-
-| 里程碑 | 周期 | 目标 |
-|---|---|---|
-| **M1** | 第 1-2 周 | Studio 创建 Pack，Runtime 加载 Pack |
-| **M2** | 第 3-5 周 | Tool + Governance + Knowledge 跑通，Demo Ops Pack 无硬件验证 |
-| **M3** | 第 6-8 周 | melon Home Pack + Home Assistant Adapter + 单设备真实控制 |
-
-详细需求见 [doc/requirements.md](doc/requirements.md)。
-
-**MVP 边界**：
-
-- Studio P0 先做通用 pack 文件树、YAML / Markdown 编辑、JSON Schema 校验、Run / Debug，不优先做完整可视化编排器。
-- Scenario Pack P0 必须跑通 `manifest / role / tools / permissions / knowledge / ui / evals` 的最小闭环。
-- Demo Ops Pack 是 Alpha 验证场景，不依赖硬件。
-- melon Home Pack 是 Beta 验证场景，只验证 Home Assistant 下的一盏灯或等价低风险设备；完整全屋智能面板、房间管理、多设备联动放到 P1。
-- Agent intent routing、持续家庭试用、Yeelight 直连、边缘镜像部署不进入 MVP。
-
-## 技术栈
+melonOS is not a replacement for a traditional operating system. It is a local-first runtime and studio for **agent-native applications**: scenario packs that declare roles, workflows, tools, permissions, knowledge sources, UI panels, and eval cases as versioned files.
 
 ```text
-Frontend:       React + TypeScript
-Desktop Shell:  Tauri
-Backend Daemon: Rust
-Plugin Runtime: Node.js / Python subprocess
-Metadata DB:    SQLite
-Search:         SQLite FTS first, Tantivy later
-MCP:            Standard MCP client/server
-Model Provider: OpenAI-compatible API + local model adapter
-Config:         YAML + JSON Schema
+melonOS = melon Runtime + Scenario Pack + melon Studio + Governance + Knowledge + Eval
 ```
 
-**原则**：交付速度靠收窄 MVP 范围解决，不靠切换 Runtime 技术栈解决。Rust + Tauri 是 melonOS 本地优先、权限审计、daemon、桌面和边缘部署路线的一部分。
+The current repository focuses on the Alpha loop: load a scenario pack, run an agent workflow, request approval for side effects, record trace/audit logs, render debug panels, and evaluate the completed task.
 
-## 目录结构
+## Why melonOS?
+
+Most agent demos are hard to operate after the first run: tool calls are implicit, permissions are scattered, UI is bespoke, and correctness is judged manually. melonOS treats those concerns as first-class platform surfaces.
+
+- **Scenario packs as apps**: a pack is a portable directory with `manifest.yaml`, workflow YAML, permission policy, tool declarations, knowledge sources, UI layout, and eval cases.
+- **Auditable runtime**: every task produces trace events, approval records, audit logs, and eval results.
+- **Governed actions**: side-effectful steps can pause for user approval before continuing.
+- **Knowledge with citations**: local knowledge sources are loaded and surfaced through source references.
+- **Studio-first debugging**: melon Studio provides pack editing, validation, Run/Debug, Trace, Audit, Eval, and layout-driven Panels.
+
+## Project Status
+
+melonOS is in active Alpha development. The current validated scenario is `demo.ops`, a no-hardware operations pack used to prove the platform loop before moving into real device control.
+
+| Area | Status | Notes |
+|---|---:|---|
+| Runtime daemon | Alpha | Axum HTTP API, SQLite persistence, task lifecycle, trace, audit, eval |
+| Scenario pack loading | Alpha | Pack discovery, file read/write, schema-backed validation |
+| melon Studio | Alpha | React/Vite editor, validation, Run/Debug, approvals, trace/audit/eval, panels |
+| Tool layer | Alpha | `ToolRegistry` with mock adapter path for Demo Ops |
+| Knowledge layer | Alpha | Local sources and search path for Demo Ops knowledge reports |
+| Governance | Alpha | Approval and audit path exists; policy engine still needs hardening |
+| melon Home / device control | Planned | Starts after Alpha Demo Ops hardening |
+
+See [doc/requirements.md](doc/requirements.md) for the detailed requirement breakdown and priority order.
+
+## Quick Start
+
+### Prerequisites
+
+- Rust toolchain
+- Node.js 20+ and npm
+- macOS, Linux, or Windows with a local shell
+
+### 1. Run the runtime
+
+```bash
+cargo run -p melon-runtime
+```
+
+The runtime listens on `127.0.0.1:8080` by default.
+
+Useful environment variables:
+
+```bash
+MELON_BIND=127.0.0.1:18080 cargo run -p melon-runtime
+MELON_DB_PATH=/tmp/melon.db cargo run -p melon-runtime
+MELON_SCENARIOS_DIR=/path/to/scenarios cargo run -p melon-runtime
+```
+
+### 2. Run melon Studio
+
+```bash
+cd apps/studio
+npm install
+npm run dev
+```
+
+Open the Vite URL printed by the command. The Studio dev server proxies `/api/*` to the runtime.
+
+### 3. Validate the runtime
+
+```bash
+curl -s http://127.0.0.1:8080/api/health
+curl -s http://127.0.0.1:8080/api/packs
+```
+
+## Demo Ops Flow
+
+`scenarios/demo-ops` is the current Alpha validation pack. It does not require hardware.
+
+1. Open `Demo Ops` in melon Studio.
+2. Click `Run`.
+3. Inspect trace events in the Run/Debug panel.
+4. Approve the pending cleanup action.
+5. Wait for the task to reach `completed`.
+6. Run Eval and confirm the Demo Ops cases pass.
+
+The expected closed loop is:
+
+```text
+run demo.ops
+  -> task awaiting_approval
+  -> user approves cleanup
+  -> task completed
+  -> trace contains status, cleanup, knowledge, and report markers
+  -> audit contains the approved side-effect path
+  -> eval passes for inspection, approval, and knowledge cases
+```
+
+## Repository Layout
 
 ```text
 melon-os/
 ├── apps/
-│   ├── studio/              # melon Studio（React + TypeScript）
-│   └── desktop/             # Tauri 桌面壳
+│   └── studio/                 # melon Studio, React + TypeScript + Vite
 ├── crates/
-│   ├── melon-runtime/       # Runtime Kernel
-│   ├── melon-agent/         # Agent Layer
-│   ├── melon-tools/         # Tool / MCP Layer
-│   ├── melon-mcp/           # MCP client/server
-│   ├── melon-kb/            # Knowledge Layer
-│   ├── melon-permission/    # Governance Layer
-│   ├── melon-scenario/      # Scenario Pack schema & loader
-│   └── melon-ui-protocol/   # Adaptive UI Protocol
-├── packages/
-│   ├── ui/                  # 共享 UI 组件库
-│   ├── scenario-schema/     # Scenario Pack JSON Schema
-│   └── sdk-js/              # JavaScript SDK
+│   ├── melon-runtime/          # HTTP daemon, routing, persistence integration
+│   ├── melon-agent/            # Workflow executor and task execution logic
+│   ├── melon-tools/            # Tool registry and adapters
+│   ├── melon-kb/               # Local knowledge loading and search
+│   ├── melon-permission/       # Governance primitives
+│   ├── melon-scenario/         # Scenario pack schema and validation
+│   ├── melon-mcp/              # MCP integration surface
+│   └── melon-ui-protocol/      # Adaptive UI protocol types
 ├── scenarios/
-│   ├── demo-ops/            # Demo Ops Pack（Alpha 验证）
-│   └── melon-home/          # melon Home Pack（Beta 验证）
+│   ├── demo-ops/               # Alpha no-hardware validation pack
+│   └── melon-home/             # Planned Home Assistant beta pack
 ├── doc/
-│   └── requirements.md      # 需求文档
-└── docs/                    # 项目文档
+│   ├── requirements.md         # MVP requirements, status, and priority map
+│   └── phase0-code-review.md   # Phase 0 review notes
+└── docs/
+    └── decisions/              # Architecture decision records
 ```
 
-## 开发命令
+## Scenario Pack Anatomy
 
-以下是目标命令，项目脚手架落地后以实际 workspace scripts 为准。
+A scenario pack is a filesystem-native app contract:
+
+```text
+scenarios/demo-ops/
+├── manifest.yaml               # Pack identity, runtime requirement, entrypoint
+├── role.md                     # Agent role and operating constraints
+├── workflows/default.yaml      # Workflow steps
+├── tools/tools.yaml            # Tool declarations
+├── permissions/policy.yaml     # Approval and risk policy
+├── knowledge/sources.yaml      # Knowledge source declarations
+├── knowledge/fixtures/*.md     # Local knowledge content
+├── ui/layout.yaml              # Runtime-driven Studio panel layout
+└── evals/cases.yaml            # Task-level eval cases
+```
+
+This structure is intentional: packs should be reviewable, portable, testable, and auditable with ordinary developer workflows.
+
+## Development
+
+### Common Commands
 
 ```bash
-# 启动 Studio 开发服务器
-npm run dev
-
-# 启动 Runtime daemon
-cargo run -p melon-runtime
-
-# 启动 Tauri 桌面壳
-npm run tauri dev
-
-# 运行测试
+# Rust checks and tests
+cargo check
 cargo test
-npm test
 
-# 构建
-cargo build --release
+# Studio tests and production build
+cd apps/studio
+npm test
 npm run build
+
+# Runtime
+cargo run -p melon-runtime
 ```
 
-## 开发规范
+### API Surface
 
-### Git
+The Alpha runtime exposes local HTTP endpoints for Studio and black-box verification:
 
-- 使用语义化的 commit message（如 `feat: add pack validation`、`fix: resolve tool registry crash`）
-- 每个 commit 对应一个独立的变更，避免大杂烩
-- 提交前确保代码能通过 lint 和编译检查
-- 功能分支命名：`feat/xxx`、`fix/xxx`、`refactor/xxx`、`docs/xxx`
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/health` | Runtime health |
+| `GET /api/packs` | List scenario packs |
+| `POST /api/packs/{pack_id}/validate` | Validate a pack |
+| `GET /api/packs/{pack_id}/files` | List pack files |
+| `GET /api/packs/{pack_id}/files/{path}` | Read a pack file |
+| `PUT /api/packs/{pack_id}/files/{path}` | Write a pack file |
+| `POST /api/packs/{pack_id}/run` | Run a pack workflow |
+| `GET /api/tasks/{task_id}` | Read task status |
+| `GET /api/tasks/{task_id}/traces` | Read trace events |
+| `GET /api/tasks/{task_id}/approvals` | List pending approvals |
+| `POST /api/tasks/{task_id}/approvals/{approval_id}/action` | Approve or reject an action |
+| `GET /api/tasks/{task_id}/audit` | Read audit logs |
+| `POST /api/tasks/{task_id}/eval` | Run eval cases for a completed task |
+| `GET /api/packs/{pack_id}/knowledge/sources` | List pack knowledge sources |
+| `GET /api/packs/{pack_id}/knowledge/search?q=...` | Search pack knowledge |
 
-### Rust
+## Roadmap
 
-- 遵循 `clippy` 和 `rustfmt` 规则
-- 错误处理使用 `thiserror` / `anyhow`，不在库代码中使用 `.unwrap()`
-- 公共 API 必须有文档注释 `///`
-- crate 间依赖通过 workspace 管理
-- 新增 crate 需要在根 `Cargo.toml` workspace members 中注册
+### Milestone 1: Pack Loading and Studio Foundation
 
-### TypeScript / React
+- Scenario pack schema and validation
+- Pack list and editor
+- Runtime-backed file read/write
+- SQLite-backed task, trace, and basic metadata persistence
 
-- 严格模式（`strict: true`）
-- 组件优先使用函数式 + hooks
-- 状态管理优先使用 React Context / Zustand，避免过早引入 Redux
-- 组件文件使用 `.tsx` 扩展名
-- 导出的组件、跨模块 API、非显而易见的业务逻辑需要注释；普通函数不强制写空泛注释
+### Milestone 2: Demo Ops Alpha
 
-### Scenario Pack
+- Tool registry and mock adapter path
+- Knowledge retrieval with source references
+- Run/Debug trace inspector
+- Approval and audit loop
+- Layout-driven Studio panels
+- Task-level eval closure for `demo.ops`
 
-- 所有 YAML 文件必须通过 JSON Schema 校验
-- pack 安装前必须展示其声明的权限
-- scenario-specific 模型不得污染 Runtime Kernel，必须放在 scenario state model 层
+### Milestone 3: melon Home Beta
 
-### 数据存储
+- Home Assistant adapter
+- Low-risk device control path
+- Device operation trace and audit
+- Approval gates for medium/high-risk home actions
 
-- 所有 migration 通过版本化 SQL 文件管理
-- task 和 trace 是一等实体，必须可查询
-- tool call 必须可追踪，写入 trace_events
-- knowledge item 必须保留 source
-- permission decision 必须可审计
-- 有副作用的操作必须写入 audit_logs
+## Design Principles
 
-### 安全
+- **Local first**: development and Alpha validation should run on a local machine without cloud infrastructure.
+- **Files are the contract**: scenario behavior should be inspectable through pack files, not hidden in Studio-only state.
+- **Trace everything important**: tool calls, approvals, knowledge references, and task state changes must be observable.
+- **Govern side effects**: potentially destructive actions should be explicit, reviewable, and auditable.
+- **Keep the MVP narrow**: prove the platform loop before adding broad device coverage or visual builders.
 
-- tool allowlist 默认开启
-- shell 命令默认禁用
-- 文件写入需要确认
-- 网络访问按目标和风险评估：localhost / LAN 内已授权 adapter 可会话级放行，未知公网目标默认 ask
-- 本地 secrets 加密存储
-- token / api key 只能以 secret ref 形式被 scenario pack 引用，不能明文写入 pack YAML，也不能随 pack export 导出
-- 日志优先保存摘要，避免完整敏感内容
-- 设备动作按风险分级：低风险可自动执行，中风险必须审批，高风险默认拒绝
+## Documentation
 
-### 测试
+| Document | Description |
+|---|---|
+| [Requirements](doc/requirements.md) | MVP requirements, priority order, current progress |
+| [Technical Plan](melonOS%20技术方案.md) | Architecture, product layers, and technical direction |
+| [MVP Plan](melonOS%20MVP%20开发计划.md) | Milestones, timeline, acceptance criteria |
+| [melon Home Plan](melon%20Home%20全屋智能技术方案.md) | Home Assistant beta scenario design |
+| [Agents OS Feasibility](Agents%20OS%20可行性与产品方案.md) | Product positioning and staged strategy |
 
-- Rust crate 必须包含单元测试
-- 公共 API 必须有集成测试
-- 前端组件必须有 snapshot 测试或行为测试
-- Scenario Pack 必须有 eval case（RQ026）
+## Contributing
 
-### 文档
+This repository is moving quickly. Before opening a large change, align it with the current milestone in [doc/requirements.md](doc/requirements.md).
 
-- 重要设计决策记录在 `docs/decisions/` 目录（ADR 格式）
-- API 变更同步更新文档
-- 需求变更同步更新 `doc/requirements.md` 状态
+Baseline checks before committing:
+
+```bash
+cargo test
+cd apps/studio && npm test && npm run build
+```
+
+Prefer small commits with semantic messages, for example:
+
+```text
+feat: add task eval endpoint
+fix: clear stale eval result after approval
+docs: refresh runtime quick start
+```
+
+## License
+
+No license has been declared yet.
