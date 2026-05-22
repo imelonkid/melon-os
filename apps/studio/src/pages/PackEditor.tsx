@@ -6,6 +6,9 @@ import {
   getAuditLogs, runEval,
   type TraceEvent, type ApprovalItem, type AuditLogEntry, type EvalSummary
 } from '../lib/api'
+import Panels from '../components/Panels'
+import { routePanels, type UiLayoutConfig, type RegionedPanels } from '../lib/panels'
+import { parse as parseYaml } from 'yaml'
 
 const RUNTIME_URL = ''
 
@@ -23,6 +26,37 @@ const QUICK_TABS = [
   'ui/layout.yaml',
   'evals/cases.yaml',
 ] as const
+
+const TRACE_TYPES = ['all', 'system', 'tool', 'agent', 'ui', 'knowledge', 'approval'] as const
+
+const TRACE_TYPE_COLORS: Record<string, string> = {
+  system: '#888',
+  tool: '#60a5fa',
+  agent: '#a78bfa',
+  ui: '#34d399',
+  knowledge: '#f59e0b',
+  approval: '#f472b6',
+}
+
+function formatRefValue(ref: string): string {
+  try {
+    const parsed = JSON.parse(ref)
+    return JSON.stringify(parsed, null, 2).slice(0, 300)
+  } catch {
+    return ref.slice(0, 300)
+  }
+}
+
+function formatTraceTime(timestamp: string, firstTimestamp: string | null): string {
+  if (!firstTimestamp) return ''
+  const first = new Date(firstTimestamp).getTime()
+  const current = new Date(timestamp).getTime()
+  const diff = (current - first) / 1000
+  if (diff < 60) return `+${diff.toFixed(1)}s`
+  const mins = Math.floor(diff / 60)
+  const secs = Math.floor(diff % 60)
+  return `+${mins}m${secs}s`
+}
 
 function getLang(fileName: string): string {
   if (fileName.endsWith('.yaml') || fileName.endsWith('.yml')) return 'yaml'
@@ -59,9 +93,37 @@ export default function PackEditor() {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
   const [evalResult, setEvalResult] = useState<EvalSummary | null>(null)
   const [evalRunning, setEvalRunning] = useState(false)
-  const [debugTab, setDebugTab] = useState<'trace' | 'audit' | 'eval'>('trace')
+  const [debugTab, setDebugTab] = useState<'trace' | 'audit' | 'eval' | 'panels'>('trace')
   const [showDebug, setShowDebug] = useState(false)
+  const [traceFilter, setTraceFilter] = useState<string>('all')
+  const [expandedTrace, setExpandedTrace] = useState<string | null>(null)
+  const [layoutConfig, setLayoutConfig] = useState<UiLayoutConfig | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // Parse ui/layout.yaml when files are loaded
+  useEffect(() => {
+    const layoutContent = files.get('ui/layout.yaml')
+    if (layoutContent) {
+      try {
+        const parsed = parseYaml(layoutContent) as { views?: unknown[] }
+        if (parsed.views && Array.isArray(parsed.views)) {
+          setLayoutConfig({
+            views: parsed.views.map((v: any) => ({
+              id: String(v.id || ''),
+              view_type: String(v.type || v.view_type || ''),
+              region: v.region ? String(v.region) : undefined,
+            })),
+          })
+        } else {
+          setLayoutConfig(null)
+        }
+      } catch {
+        setLayoutConfig(null)
+      }
+    } else {
+      setLayoutConfig(null)
+    }
+  }, [files])
 
   // Discover pack ID from URL or fetch from packs list
   useEffect(() => {
@@ -192,6 +254,8 @@ export default function PackEditor() {
       setTaskStatus(result.status)
       setShowDebug(true)
       setDebugTab('trace')
+      setTraceFilter('all')
+      setExpandedTrace(null)
       setAuditLogs([])
       setEvalResult(null)
       refreshTask()
@@ -208,7 +272,12 @@ export default function PackEditor() {
         getTraces(taskId),
         getApprovals(taskId),
       ])
-      setTaskStatus(task.status)
+      setTaskStatus(prev => {
+        if (prev !== task.status) {
+          setEvalResult(null)
+        }
+        return task.status
+      })
       setTraces(traceList)
       setApprovals(approvalList.filter(a => a.status === 'pending'))
     } catch {
@@ -221,6 +290,7 @@ export default function PackEditor() {
     try {
       await resolveApproval(taskId, approvalId, approve)
       setApprovals(prev => prev.filter(a => a.id !== approvalId))
+      setEvalResult(null)
       refreshTask()
     } catch (e: any) {
       alert(e?.message || 'Failed to resolve approval')
@@ -229,6 +299,11 @@ export default function PackEditor() {
 
   const handleRunEval = useCallback(async () => {
     if (!taskId) return
+    if (taskStatus !== 'completed') {
+      setEvalResult(null)
+      setDebugTab('eval')
+      return
+    }
     setEvalRunning(true)
     try {
       const result = await runEval(taskId)
@@ -239,7 +314,7 @@ export default function PackEditor() {
     } finally {
       setEvalRunning(false)
     }
-  }, [taskId])
+  }, [taskId, taskStatus])
 
   const handleLoadAudit = useCallback(async () => {
     if (!taskId) return
@@ -456,7 +531,7 @@ export default function PackEditor() {
         <div style={{
           borderTop: '1px solid #2a2a2a',
           background: '#141414',
-          height: 280,
+          height: 360,
           display: 'flex',
           flexDirection: 'column',
         }}>
@@ -509,7 +584,7 @@ export default function PackEditor() {
                 borderBottom: '1px solid #2a2a2a',
                 padding: '0 12px',
               }}>
-                {(['trace', 'audit', 'eval'] as const).map(tab => (
+                {(['trace', 'audit', 'eval', 'panels'] as const).map(tab => (
                   <button
                     key={tab}
                     onClick={() => {
@@ -537,32 +612,107 @@ export default function PackEditor() {
 
               {/* Trace tab */}
               {debugTab === 'trace' && (
-                <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
-                  <div style={{ fontSize: 11, color: '#666', marginBottom: 6 }}>Trace Events</div>
-                  {traces.map((t, i) => {
-                    const color = t.event_type === 'system' ? '#888'
-                      : t.event_type === 'tool' ? '#60a5fa'
-                      : t.event_type === 'agent' ? '#a78bfa'
-                      : t.event_type === 'approval' ? '#f59e0b'
-                      : '#888'
-                    return (
-                      <div key={t.id} style={{
-                        display: 'flex',
-                        gap: 8,
-                        padding: '3px 0',
-                        fontSize: 12,
-                        fontFamily: 'monospace',
-                        color: '#ccc',
-                      }}>
-                        <span style={{ color: '#555', minWidth: 16 }}>{i + 1}</span>
-                        <span style={{ color, minWidth: 50, textTransform: 'uppercase', fontSize: 10 }}>{t.event_type}</span>
-                        <span style={{ flex: 1, wordBreak: 'break-all' }}>{t.summary}</span>
-                      </div>
-                    )
-                  })}
-                  {traces.length === 0 && (
-                    <div style={{ fontSize: 12, color: '#666', padding: 8 }}>Waiting for events...</div>
-                  )}
+                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                  {/* Filter bar */}
+                  <div style={{ padding: '8px 12px 4px', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {TRACE_TYPES.map(type => (
+                      <button
+                        key={type}
+                        onClick={() => setTraceFilter(type)}
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: 12,
+                          border: '1px solid',
+                          borderColor: traceFilter === type
+                            ? (type === 'all' ? '#3b82f6' : TRACE_TYPE_COLORS[type] || '#888')
+                            : '#333',
+                          background: traceFilter === type
+                            ? ((type === 'all' ? '#3b82f6' : TRACE_TYPE_COLORS[type] || '#888') + '22')
+                            : 'transparent',
+                          color: traceFilter === type ? '#fff' : '#666',
+                          cursor: 'pointer',
+                          fontSize: 11,
+                          textTransform: 'capitalize',
+                        }}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Trace list */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '4px 12px 8px' }}>
+                    {(() => {
+                      const filtered = traceFilter === 'all'
+                        ? traces
+                        : traces.filter(t => t.event_type === traceFilter)
+                      const firstTs = filtered.length > 0 ? filtered[0].timestamp : null
+
+                      return filtered.map((t) => {
+                        const color = TRACE_TYPE_COLORS[t.event_type] || '#888'
+                        const isExpanded = expandedTrace === t.id
+                        const timeLabel = formatTraceTime(t.timestamp, firstTs)
+
+                        return (
+                          <div key={t.id} style={{ marginBottom: 2 }}>
+                            <div
+                              onClick={() => setExpandedTrace(isExpanded ? null : t.id)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                padding: '4px 8px',
+                                borderRadius: 4,
+                                background: isExpanded ? '#1e1e1e' : 'transparent',
+                                cursor: (t.input_ref || t.output_ref) ? 'pointer' : 'default',
+                                fontSize: 12,
+                                fontFamily: 'monospace',
+                                color: '#ccc',
+                                borderLeft: `2px solid ${color}66`,
+                              }}
+                            >
+                              <span style={{ color: '#444', minWidth: 28, fontSize: 10 }}>{timeLabel}</span>
+                              <span style={{ color, minWidth: 56, textTransform: 'uppercase', fontSize: 9, fontWeight: 600 }}>
+                                {t.event_type}
+                              </span>
+                              <span style={{ flex: 1, wordBreak: 'break-all' }}>{t.summary}</span>
+                              {(t.input_ref || t.output_ref) && (
+                                <span style={{ color: '#555', fontSize: 10 }}>{isExpanded ? '▾' : '▸'}</span>
+                              )}
+                            </div>
+                            {isExpanded && (t.input_ref || t.output_ref) && (
+                              <div style={{
+                                margin: '2px 0 6px 34px',
+                                padding: 8,
+                                background: '#0a0a0a',
+                                borderRadius: 4,
+                                border: '1px solid #2a2a2a',
+                                fontSize: 11,
+                                fontFamily: 'monospace',
+                                color: '#888',
+                                maxWidth: 600,
+                              }}>
+                                {t.input_ref && (
+                                  <div style={{ marginBottom: 4 }}>
+                                    <span style={{ color: '#60a5fa' }}>input:</span>{' '}
+                                    <span style={{ color: '#aaa' }}>{formatRefValue(t.input_ref)}</span>
+                                  </div>
+                                )}
+                                {t.output_ref && (
+                                  <div>
+                                    <span style={{ color: '#4ade80' }}>output:</span>{' '}
+                                    <span style={{ color: '#aaa' }}>{formatRefValue(t.output_ref)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })
+                    })()}
+                    {traces.length === 0 && (
+                      <div style={{ fontSize: 12, color: '#666', padding: 8 }}>Waiting for events...</div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -598,18 +748,18 @@ export default function PackEditor() {
                     <div style={{ fontSize: 11, color: '#666' }}>Eval Results</div>
                     <button
                       onClick={handleRunEval}
-                      disabled={evalRunning}
+                      disabled={evalRunning || taskStatus !== 'completed'}
                       style={{
                         background: 'none',
                         border: '1px solid #333',
                         color: '#888',
-                        cursor: evalRunning ? 'wait' : 'pointer',
+                        cursor: evalRunning ? 'wait' : taskStatus !== 'completed' ? 'not-allowed' : 'pointer',
                         fontSize: 11,
                         padding: '2px 8px',
                         borderRadius: 4,
                       }}
                     >
-                      {evalRunning ? 'Running...' : 'Run Eval'}
+                      {evalRunning ? 'Running...' : taskStatus !== 'completed' ? 'Waiting' : 'Run Eval'}
                     </button>
                   </div>
                   {evalResult ? (
@@ -653,10 +803,20 @@ export default function PackEditor() {
                       ))}
                     </>
                   ) : (
-                    <div style={{ fontSize: 12, color: '#666', padding: 8 }}>Click "Run Eval" to evaluate</div>
+                    <div style={{ fontSize: 12, color: '#666', padding: 8 }}>
+                      {taskStatus === 'completed'
+                        ? 'Click "Run Eval" to evaluate'
+                        : 'Eval is available after the workflow completes'}
+                    </div>
                   )}
                 </div>
               )}
+
+              {/* Panels tab */}
+              {debugTab === 'panels' && (() => {
+                const regionedPanels: RegionedPanels[] = routePanels(layoutConfig, traces)
+                return <Panels regions={regionedPanels} hasLayout={!!layoutConfig} />
+              })()}
             </div>
 
             {/* Approvals (always visible when pending) */}
