@@ -5,6 +5,40 @@
 
 ## 需求总览
 
+### 当前进度快照（2026-05-22）
+
+当前代码已经完成两个关键阶段：
+
+- Phase 0 / Milestone 1 主链路已经打通：Runtime daemon、pack discovery、pack file read/write、runtime-backed validation、task persistence、trace、基础 SQLite 表、Studio Pack List / Pack Editor / Validation。
+- Milestone 2-1 已完成：`demo.ops` 可以通过 Studio / Runtime 运行，触发 approval，写入 trace/audit，执行 task 级 eval，真实 `demo.ops` eval 已验证 `3/3 pass`。
+
+但当前仍有几个能力只是“闭环演示”，还不是 melonOS 的通用平台能力：
+
+- Tool 调用已经从 executor 内部 mock response 收敛到 `melon-tools::ToolRegistry + MockToolAdapter` 主路径；但 registry 仍是 MVP 雏形，尚未完整支持工具配置路由、进程生命周期和持久化 tool_calls。
+- Knowledge 报告流程目前依靠 trace marker 模拟 `source_reference / actionable_recommendation`，尚未真实检索 `knowledge/sources.yaml` 和 Markdown 内容。
+- Policy Engine 目前是 executor 内部的最小 YAML 读取逻辑，还没有沉淀到 `melon-permission`。
+- UI Panel 协议尚未把 `ui/layout.yaml` 渲染成结构化 panel，目前 Studio Debug 主要展示 trace/audit/eval/approval。
+
+### 状态标记
+
+| 状态 | 含义 |
+|---|---|
+| done | 已实现并有测试或黑盒验证 |
+| partial | 主路径可用，但需求中的部分能力尚未实现 |
+| next | 下一批必须优先实现 |
+| pending | 尚未开始 |
+| deferred | 明确延后，不阻塞当前 MVP 主线 |
+
+### 优先级标记
+
+| 优先级 | 含义 |
+|---|---|
+| P0-A | 当前下一张任务卡，必须先做 |
+| P0-B | 当前里程碑主线，紧随 P0-A |
+| P0-C | 当前里程碑收尾/加固 |
+| P0-D | 下一里程碑入口，必须等 Alpha 验证后再做 |
+| P1 | MVP 后增强或非当前主线 |
+
 ### MVP 裁剪原则
 
 - P0 优先验证 `Studio 创建 pack -> Runtime 加载 pack -> Tool / Governance / Knowledge / Eval 闭环 -> 一个真实设备动作`。
@@ -14,66 +48,150 @@
 - melon Home Pack 是 Beta 验证场景，P0 只要求通过 Home Assistant 控制一盏灯或等价低风险设备。完整房间视图、多设备面板、插座、传感器、场景面板归 P1。
 - Agent intent routing、家庭长期试用、Yeelight 直连、边缘镜像部署不进入 MVP。
 
+### 当前执行顺序
+
+接下来所有开发都必须围绕 melonOS 的平台目标展开：先把无硬件 Alpha 验证做成真正的通用平台能力，再进入真实设备 Beta。
+
+```text
+M2-2 Tool Layer 收敛（done）
+  目标：Executor 通过 ToolRegistry 调 MockToolAdapter，不再硬编码 mock tool response
+  覆盖：RQ019、RQ020，支撑 RQ021/RQ023/RQ027/RQ028
+
+M2-3 Knowledge Layer 最小实现（next）
+  目标：真实读取 knowledge/sources.yaml，导入 Markdown/txt，检索并产生 source tracking trace
+  覆盖：RQ025、RQ029，修正当前 source_reference 模拟实现
+
+M2-4 UI Panel / Trace Inspector
+  目标：根据 ui/layout.yaml 渲染结构化 Run/Debug panel、状态卡片、报告和 source 引用
+  覆盖：RQ024、RQ030，支撑 Demo Ops 可演示性
+
+M2-5 Governance hardening
+  目标：Policy Engine 从 executor 中拆出，补 allow_once / allow_session、pause/cancel、audit 查询范围
+  覆盖：RQ017、RQ021、RQ022、RQ023
+
+M3-1 melon Home Beta
+  前置条件：M2 Alpha 三个 Demo Ops flow 真实通过，不再依赖硬编码 marker
+  覆盖：RQ031-RQ038、RQ041-RQ042
+```
+
+### Qwen 当前完成任务卡
+
+**任务名**：M2-2 Tool Registry and Mock Adapter Integration
+
+**目标**：把当前 executor 内部的 mock tool 硬编码调用，收敛为 Runtime/Executor 通过 `melon-tools` 的 `ToolRegistry` 调用 `MockToolAdapter`。
+
+**当前状态（2026-05-22 验收）**：done / partial。M2-2 主路径已经完成并通过黑盒验收；RQ019/RQ020 的完整需求仍有后续项，不应把整个 Tool Layer 标成完成。
+
+**必须做**：
+
+- Runtime 或 Executor 初始化 `ToolRegistry`，注册 `MockToolAdapter`。
+- Executor 执行 `type: tool` step 时通过 registry 调用 adapter。
+- 删除或降级 `melon-agent/src/executor.rs` 中重复的 `mock_tool_response` / `execute_mock_tool` 硬编码逻辑。
+- 保持 `mock_check_service`、`mock_check_storage`、`mock_check_network`、`mock_cleanup_temp` 行为不变。
+- 工具调用结果继续写入 trace 和 audit。
+- `demo.ops` run -> approval -> completed -> eval `3/3 pass` 必须继续通过。
+
+**不得做**：
+
+- 不要接 Home Assistant。
+- 不要做复杂 MCP / CLI / HTTP 工具启动器。
+- 不要把 Tool Registry 写成 demo-ops 专用逻辑。
+- 不要引入新的 UI 大改版。
+
+**验收**：
+
+- `cargo test` 通过，并新增 registry/adapter/executor integration 测试。
+- `apps/studio` 下 `npm run build` 通过。
+- 黑盒验证真实 `demo.ops`：任务 completed、audit 有工具调用、eval `3/3 pass`。
+
+### Qwen 下一张任务卡
+
+**任务名**：M2-3 Knowledge Layer Minimal Retrieval
+
+**目标**：把 `demo.ops` 的知识报告从 trace marker 模拟，升级为真实读取 `knowledge/sources.yaml` 和本地 Markdown/txt 内容，生成带 source id / path / citation 的 trace。
+
+**必须做**：
+
+- 读取 pack 内 `knowledge/sources.yaml`。
+- 导入或加载 `knowledge/fixtures/inspection_runbook.md` 等本地 Markdown/txt。
+- 提供最小关键词检索能力，返回 source id、path、匹配片段和 citation。
+- Executor 的报告步骤使用 knowledge layer 结果写 trace，不再只靠 `source_reference` marker 模拟。
+- `ops-knowledge-001` eval 仍必须通过，但通过依据要来自真实 source trace。
+
+**不得做**：
+
+- 不要引入 embedding、向量数据库、网页抓取或远端知识服务。
+- 不要做复杂 RAG 编排器。
+- 不要进入 Home Assistant / melon Home。
+
+**验收**：
+
+- `cargo test` 通过，并覆盖 sources.yaml 读取、Markdown/txt 检索、executor/report trace。
+- `apps/studio` 下 `npm run build` 通过。
+- 黑盒验证真实 `demo.ops`：eval `3/3 pass`，trace 中能看到真实 source id / path / citation。
+
 ### Milestone 1：Studio 创建 Pack，Runtime 加载 Pack（第 1-2 周）
 
 | 编号 | 名称 | 优先级 | 状态 |
 |---|---|---:|---|
-| [RQ001](#rq001) | Scenario Pack Schema 定义 | P0 | pending |
-| [RQ002](#rq002) | melon Studio 项目骨架 | P0 | pending |
-| [RQ003](#rq003) | Pack List 页面 | P0 | pending |
-| [RQ004](#rq004) | Pack Editor 框架 | P0 | pending |
-| [RQ005](#rq005) | Manifest Editor | P0 | pending |
+| [RQ001](#rq001) | Scenario Pack Schema 定义 | P0-B | done |
+| [RQ002](#rq002) | melon Studio 项目骨架 | P0-C | partial |
+| [RQ003](#rq003) | Pack List 页面 | P0-C | partial |
+| [RQ004](#rq004) | Pack Editor 框架 | P0-C | done |
+| [RQ005](#rq005) | Manifest Editor | P1 | deferred |
 | [RQ006](#rq006) | Role Editor | P1 | pending |
 | [RQ007](#rq007) | Tools Config Editor | P1 | pending |
 | [RQ008](#rq008) | Permissions Config Editor | P1 | pending |
 | [RQ009](#rq009) | Knowledge Sources Config Editor | P1 | pending |
 | [RQ010](#rq010) | UI Layout Config Editor | P1 | pending |
 | [RQ011](#rq011) | Eval Cases Config Editor | P1 | pending |
-| [RQ012](#rq012) | Pack Validation Panel | P0 | pending |
+| [RQ012](#rq012) | Pack Validation Panel | P0-C | done |
 | [RQ013](#rq013) | Pack Import / Export | P1 | pending |
-| [RQ014](#rq014) | melon Runtime 最小 Daemon | P0 | pending |
-| [RQ015](#rq015) | Pack Loader | P0 | pending |
-| [RQ016](#rq016) | SQLite 基础表 | P0 | pending |
+| [RQ014](#rq014) | melon Runtime 最小 Daemon | P0-C | partial |
+| [RQ015](#rq015) | Pack Loader | P0-C | partial |
+| [RQ016](#rq016) | SQLite 基础表 | P0-C | partial |
 
 ### Milestone 2：Tool + Governance + Knowledge + Demo Ops Pack（第 3-5 周）
 
 | 编号 | 名称 | 优先级 | 状态 |
 |---|---|---:|---|
-| [RQ017](#rq017) | Task Manager | P0 | pending |
-| [RQ018](#rq018) | Run / Debug Panel | P0 | pending |
-| [RQ019](#rq019) | Tool Registry | P0 | pending |
-| [RQ020](#rq020) | Mock Tool Adapter | P0 | pending |
-| [RQ021](#rq021) | Policy Engine | P0 | pending |
-| [RQ022](#rq022) | Approval Panel | P0 | pending |
-| [RQ023](#rq023) | Audit Log | P0 | pending |
-| [RQ024](#rq024) | Trace Inspector | P0 | pending |
-| [RQ025](#rq025) | Knowledge Layer 最小实现 | P0 | pending |
-| [RQ026](#rq026) | Eval Runner | P0 | pending |
-| [RQ027](#rq027) | Demo Ops Pack — 巡检流程 | P0 | pending |
-| [RQ028](#rq028) | Demo Ops Pack — 审批流程 | P0 | pending |
-| [RQ029](#rq029) | Demo Ops Pack — 知识报告流程 | P0 | pending |
-| [RQ030](#rq030) | 通用 UI Panel 协议 | P0 | pending |
+| [RQ017](#rq017) | Task Manager | P0-C | partial |
+| [RQ018](#rq018) | Run / Debug Panel | P0-C | done |
+| [RQ019](#rq019) | Tool Registry | P0-C | partial |
+| [RQ020](#rq020) | Mock Tool Adapter | P0-C | partial |
+| [RQ021](#rq021) | Policy Engine | P0-C | partial |
+| [RQ022](#rq022) | Approval Panel | P0-C | partial |
+| [RQ023](#rq023) | Audit Log | P0-C | partial |
+| [RQ024](#rq024) | Trace Inspector | P0-B | next |
+| [RQ025](#rq025) | Knowledge Layer 最小实现 | P0-B | next |
+| [RQ026](#rq026) | Eval Runner | P0-C | done |
+| [RQ027](#rq027) | Demo Ops Pack — 巡检流程 | P0-C | done |
+| [RQ028](#rq028) | Demo Ops Pack — 审批流程 | P0-C | done |
+| [RQ029](#rq029) | Demo Ops Pack — 知识报告流程 | P0-B | partial |
+| [RQ030](#rq030) | 通用 UI Panel 协议 | P0-B | next |
 
 ### Milestone 3：melon Home Pack + 真实设备控制（第 6-8 周）
 
 | 编号 | 名称 | 优先级 | 状态 |
 |---|---|---:|---|
-| [RQ031](#rq031) | melon Home Pack 结构 | P0 | pending |
-| [RQ032](#rq032) | Home Assistant Adapter | P0 | pending |
-| [RQ033](#rq033) | Home 模型 | P0 | pending |
+| [RQ031](#rq031) | melon Home Pack 结构 | P0-D | pending |
+| [RQ032](#rq032) | Home Assistant Adapter | P0-D | pending |
+| [RQ033](#rq033) | Home 模型 | P0-D | pending |
 | [RQ034](#rq034) | Home Dashboard | P1 | pending |
 | [RQ035](#rq035) | Room View | P1 | pending |
 | [RQ036](#rq036) | Device Panel | P1 | pending |
 | [RQ037](#rq037) | Scene Panel | P1 | pending |
-| [RQ038](#rq038) | 灯光控制 | P0 | pending |
+| [RQ038](#rq038) | 灯光控制 | P0-D | pending |
 | [RQ039](#rq039) | 插座控制 | P1 | pending |
 | [RQ040](#rq040) | 传感器状态读取 | P1 | pending |
-| [RQ041](#rq041) | 中高风险动作审批 | P0 | pending |
-| [RQ042](#rq042) | 设备操作 Trace / Audit | P0 | pending |
+| [RQ041](#rq041) | 中高风险动作审批 | P0-D | pending |
+| [RQ042](#rq042) | 设备操作 Trace / Audit | P0-D | pending |
 
 ---
 
 ## 需求详情
+
+> 说明：需求详情保留原始验收口径。当前执行优先级和状态以“需求总览”中的表格与“当前执行顺序”为准。
 
 ### RQ001
 
@@ -436,8 +554,8 @@
 ### RQ019
 
 **名称**：Tool Registry
-**优先级**：P0
-**状态**：pending
+**优先级**：P0-C
+**状态**：partial
 
 **功能点**：
 - 注册 / 注销工具 adapter
@@ -451,13 +569,19 @@
 - 健康检查返回工具状态
 - 启动 / 停止工具进程正常
 
+**当前执行备注（M2-2）**：
+- Runtime/Executor 已经接入 `MockToolAdapter`，tool step 通过 registry 调用 adapter。
+- 当前 registry 仍按 action 前缀推导 adapter，尚未基于 pack tool config 做通用路由。
+- M2-2 不要求实现完整进程启动器；后续 RQ019 完整化时再补健康检查、启动/停止和持久化调用日志。
+- `demo.ops` 现有 run/eval 黑盒已保持通过。
+
 ---
 
 ### RQ020
 
 **名称**：Mock Tool Adapter
-**优先级**：P0
-**状态**：pending
+**优先级**：P0-C
+**状态**：partial
 
 **功能点**：
 - 实现 Adapter interface 的 mock 实现
@@ -471,13 +595,18 @@
 - 调用 mock_cleanup_temp 触发 approval
 - 所有调用记录在 tool_calls 表中
 
+**当前执行备注（M2-2）**：
+- `MockToolAdapter` 已成为 executor tool step 的 mock response、risk、default_policy 来源。
+- 工具调用结果已经进入 trace/audit，并覆盖 `mock_check_service`、`mock_check_storage`、`mock_check_network`、`mock_cleanup_temp`。
+- `tool_calls` 表尚未实现；后续如新增持久化 tool call，需要同步补 DB 初始化、API 和测试。
+
 ---
 
 ### RQ021
 
 **名称**：Policy Engine
-**优先级**：P0
-**状态**：pending
+**优先级**：P0-C
+**状态**：partial
 
 **功能点**：
 - 加载 pack 的 permissions/policy.yaml
@@ -490,6 +619,11 @@
 - shell 命令返回 deny
 - allow_once 动作批准后本次通过，下次仍需批准
 - allow_session 动作批准后本次会话通过
+
+**当前执行备注**：
+- 当前 executor 内部已有 `allow / ask / deny` 最小评估逻辑。
+- `allow_once / allow_session` 尚未实现。
+- M2-2 不拆 Policy Engine；M2-5 再把它沉淀到 `melon-permission`。
 
 ---
 
@@ -553,8 +687,8 @@
 ### RQ025
 
 **名称**：Knowledge Layer 最小实现
-**优先级**：P0
-**状态**：pending
+**优先级**：P0-B
+**状态**：next
 
 **功能点**：
 - 导入 Markdown / txt 文件到 knowledge/ 目录
@@ -571,6 +705,12 @@
 - 导入一个 Markdown 文件，能在 knowledge_items 中查到记录
 - 搜索关键词能返回匹配的 chunk 和对应的 source
 - 检索结果包含 source id 和引用信息
+
+**当前执行备注（M2-3）**：
+- 当前 `source_reference` 仍来自 executor trace marker，不是真实知识检索。
+- M2-3 必须读取 `knowledge/sources.yaml`，导入 `knowledge/fixtures/inspection_runbook.md`。
+- 检索结果要写入 trace，并带 source id / path / citation。
+- MVP 只做本地 Markdown / txt，禁止引入 embedding、向量库、网页抓取。
 
 ---
 
@@ -641,8 +781,8 @@
 ### RQ029
 
 **名称**：Demo Ops Pack — 知识报告流程
-**优先级**：P0
-**状态**：pending
+**优先级**：P0-B
+**状态**：partial
 
 **功能点**：
 - 在 demo-ops/knowledge/ 下放置 inspection_runbook.md 样例文件
@@ -655,13 +795,17 @@
 - 处理建议中展示来源引用
 - eval case 检查必须包含 source ref 并通过
 
+**当前执行备注（M2-3）**：
+- 当前 eval 已能通过，但知识报告是模拟输出，不是真实 retrieval。
+- M2-3 完成后，`ops-knowledge-001` 必须依赖真实 knowledge trace 通过，而不是硬编码 marker。
+
 ---
 
 ### RQ030
 
 **名称**：通用 UI Panel 协议
-**优先级**：P0
-**状态**：pending
+**优先级**：P0-B
+**状态**：next
 
 **功能点**：
 - 定义 UI panel 的数据协议（panel type、data schema、actions）
@@ -674,6 +818,10 @@
 - 根据 layout.yaml 配置能正确渲染对应 panel
 - Entity List Panel 能展示实体列表
 - Action Panel 能触发动作并反馈结果
+
+**当前执行备注（M2-4）**：
+- 只有在 Tool Layer 和 Knowledge Layer 真实化后再做 UI Panel。
+- 不要做低代码编辑器；只做运行态展示：状态卡片、审批、报告、source 引用、trace timeline。
 
 ---
 

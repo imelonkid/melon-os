@@ -5,6 +5,10 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+
+use melon_tools::mock_adapter::MockToolAdapter;
+use melon_tools::registry::ToolRegistry;
 
 use crate::AppState;
 
@@ -57,10 +61,15 @@ async fn run_pack(
     .ok();
 
     // Spawn workflow executor as background task
+    let mut registry = ToolRegistry::new();
+    registry.register_adapter(Arc::new(MockToolAdapter::new()));
+    let registry = Arc::new(registry);
+
     let ctx = melon_agent::executor::ExecutorContext {
         db: state.db.clone(),
         pack_dir,
         task_id: task_id.clone(),
+        registry,
     };
 
     tokio::spawn(async move {

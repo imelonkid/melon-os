@@ -1133,8 +1133,10 @@ name = "melon-agent"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "melon-scenario",
+ "melon-tools",
  "serde",
  "serde_json",
  "serde_yaml",

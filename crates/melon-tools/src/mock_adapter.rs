@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use super::adapter::ToolAdapter;
+use super::adapter::{ToolActionMeta, ToolAdapter};
 
 /// Records a single mock tool call for inspection.
 #[derive(Debug, Clone)]
@@ -116,5 +116,12 @@ impl ToolAdapter for MockToolAdapter {
 
     async fn healthcheck(&self) -> bool {
         true
+    }
+
+    fn tool_metadata(&self, action: &str) -> Option<ToolActionMeta> {
+        self.responses.get(action).map(|r| ToolActionMeta {
+            risk: r.risk.clone(),
+            default_policy: r.default_policy.clone(),
+        })
     }
 }
