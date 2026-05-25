@@ -42,7 +42,7 @@ melonOS 目前处于 Alpha 阶段。当前已验证的场景是 `demo.ops`，这
 | Governance | Alpha | Approval/audit 路径已存在；policy engine 仍需 hardening |
 | melon Home / device control | Planned | 等 Alpha Demo Ops 加固后进入 |
 
-详细需求和优先级见 [doc/requirements.md](doc/requirements.md)。
+详细需求、优先级和设计记录维护在 Obsidian 知识库的 `Melon OS/` 目录下。代码仓库只保留实现源码、场景包和面向 GitHub 的 README；已迁移的规划文档不再在 `doc/` 下重复维护。
 
 ## 架构图
 
@@ -180,9 +180,6 @@ melon-os/
 ├── scenarios/
 │   ├── demo-ops/               # Alpha no-hardware validation pack
 │   └── melon-home/             # Planned Home Assistant beta pack
-├── doc/
-│   ├── requirements.md         # MVP requirements, status, and priority map
-│   └── phase0-code-review.md   # Phase 0 review notes
 └── docs/
     └── decisions/              # Architecture decision records
 ```
@@ -283,15 +280,16 @@ Alpha runtime 暴露本地 HTTP endpoints，供 Studio 和黑盒验证使用：
 
 | 文档 | 说明 |
 |---|---|
-| [Requirements](doc/requirements.md) | MVP requirements、优先级和当前进度 |
 | [Technical Plan](melonOS%20技术方案.md) | 架构、产品分层和技术方向 |
 | [MVP Plan](melonOS%20MVP%20开发计划.md) | 里程碑、时间线和验收标准 |
 | [melon Home Plan](melon%20Home%20全屋智能技术方案.md) | Home Assistant beta scenario design |
 | [Agents OS Feasibility](Agents%20OS%20可行性与产品方案.md) | 产品定位和阶段策略 |
 
+权威需求和详细设计在 Obsidian vault 的 `Melon OS/00 melonOS 专题索引.md` 中入口化维护，其中 `02 melonOS MVP 需求与路线图.md` 是当前推进项目的执行依据。
+
 ## 贡献
 
-这个仓库仍在快速迭代。大改动开始前，先对齐 [doc/requirements.md](doc/requirements.md) 中的当前里程碑。
+这个仓库仍在快速迭代。大改动开始前，先对齐 Obsidian `Melon OS/02 melonOS MVP 需求与路线图.md` 中的当前里程碑。
 
 提交前建议执行：
 

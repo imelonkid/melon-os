@@ -10,10 +10,10 @@
 [![Tauri](https://img.shields.io/badge/Tauri-planned-24c8db?logo=tauri)](https://tauri.app/)
 [![Status](https://img.shields.io/badge/status-alpha-yellow)](#project-status)
 
-melonOS is not a replacement for a traditional operating system. It is a local-first runtime and studio for **agent-native applications**: scenario packs that declare roles, workflows, tools, permissions, knowledge sources, UI panels, and eval cases as versioned files.
+melonOS is not a replacement for a traditional operating system. It is a local-first runtime, studio, and packaging system for **agent-native applications**: scenario products assembled from roles, workflows, tools, permissions, knowledge sources, UI panels, eval cases, and only the runtime capabilities they actually use.
 
 ```text
-melonOS = melon Runtime + Scenario Pack + melon Studio + Governance + Knowledge + Eval
+melonOS = melon Studio + Scenario Pack + Product Compiler + Modular Runtime + Product Bundle
 ```
 
 The current repository focuses on the Alpha loop: load a scenario pack, run an agent workflow, request approval for side effects, record trace/audit logs, render debug panels, and evaluate the completed task.
@@ -23,6 +23,7 @@ The current repository focuses on the Alpha loop: load a scenario pack, run an a
 Most agent demos are hard to operate after the first run: tool calls are implicit, permissions are scattered, UI is bespoke, and correctness is judged manually. melonOS treats those concerns as first-class platform surfaces.
 
 - **Scenario packs as apps**: a pack is a portable directory with `manifest.yaml`, workflow YAML, permission policy, tool declarations, knowledge sources, UI layout, and eval cases.
+- **Product bundles as deliverables**: a product bundle packages one scenario with its required runtime modules, knowledge, UI, policy, and deployment configuration so it can run as a focused desktop app, server app, Docker image, or edge package.
 - **Auditable runtime**: every task produces trace events, approval records, audit logs, and eval results.
 - **Governed actions**: side-effectful steps can pause for user approval before continuing.
 - **Knowledge with citations**: local knowledge sources are loaded and surfaced through source references.
@@ -42,7 +43,7 @@ melonOS is in active Alpha development. The current validated scenario is `demo.
 | Governance | Alpha | Approval and audit path exists; policy engine still needs hardening |
 | melon Home / device control | Planned | Starts after Alpha Demo Ops hardening |
 
-See [doc/requirements.md](doc/requirements.md) for the detailed requirement breakdown and priority order.
+Detailed requirements, priority order, and design records are maintained in the Obsidian knowledge base under `Melon OS/`. The repository keeps implementation source, scenario packs, and user-facing README files; migrated planning documents are not mirrored under `doc/`.
 
 ## Architecture
 
@@ -50,7 +51,9 @@ See [doc/requirements.md](doc/requirements.md) for the detailed requirement brea
 flowchart TB
     Dev["Developer / Integrator"] --> Studio["melon Studio<br/>Pack editor, validation, Run/Debug"]
     Studio --> Pack["Scenario Pack<br/>manifest, workflow, tools, permissions, knowledge, ui, evals"]
-    Pack --> Runtime["melon Runtime"]
+    Pack --> Compiler["Product Compiler<br/>dependency analysis, runtime pruning, bundle assembly"]
+    Pack --> Runtime["melon Runtime<br/>development runtime"]
+    Compiler --> Bundle["Scenario Product Bundle<br/>runtime subset, scenario assets, UI shell, deployment config"]
 
     subgraph RuntimeLayers["Runtime Layers"]
         Kernel["Runtime Kernel<br/>task lifecycle, state, scheduler"]
@@ -62,6 +65,7 @@ flowchart TB
     end
 
     Runtime --> Kernel
+    Bundle --> Kernel
     Kernel --> Agent
     Agent --> Tools
     Agent --> Knowledge
@@ -72,8 +76,26 @@ flowchart TB
     Governance -.-> UI
 
     Runtime --> Store["SQLite<br/>tasks, traces, approvals, audit, eval"]
-    Runtime --> Targets["Deployment Targets<br/>desktop, browser, server, edge"]
+    Bundle --> Store
+    Bundle --> Targets["Deployment Targets<br/>desktop, browser, server, Docker, edge"]
 ```
+
+## Product Bundle Model
+
+melonOS separates development-time breadth from runtime delivery:
+
+```text
+Development time: melon Studio + full runtime modules + pack validation and debugging
+Runtime delivery: product bundle + only required runtime modules + scenario assets
+```
+
+A scenario product bundle should include only what the scenario depends on:
+
+- required runtime modules, such as chat, tool execution, skill workflow, variable resolution, storage, approval, or result rendering;
+- scenario-owned tools, skills, workflows, UI definitions, knowledge, seed data, eval cases, and policy;
+- product shell and deployment configuration for desktop, browser/server, Docker, or edge targets.
+
+This keeps vertical products focused: a product built for one scenario should not ship unused UI surfaces, unused connectors, or broad platform editing tools unless the scenario explicitly depends on them.
 
 ## Quick Start
 
@@ -180,9 +202,6 @@ melon-os/
 ├── scenarios/
 │   ├── demo-ops/               # Alpha no-hardware validation pack
 │   └── melon-home/             # Planned Home Assistant beta pack
-├── doc/
-│   ├── requirements.md         # MVP requirements, status, and priority map
-│   └── phase0-code-review.md   # Phase 0 review notes
 └── docs/
     └── decisions/              # Architecture decision records
 ```
@@ -205,6 +224,16 @@ scenarios/demo-ops/
 ```
 
 This structure is intentional: packs should be reviewable, portable, testable, and auditable with ordinary developer workflows.
+
+## UI Extensibility
+
+melonOS does not require every scenario product to share the same interface. The runtime provides common interaction contracts and reusable surfaces, while each scenario pack declares the product shell, pages, panels, cards, result views, and any custom components it needs.
+
+Recommended UI levels:
+
+- **Configured UI**: pages and panels composed from built-in views such as chat, table, JSON, document, timeline, approval, trace, and result cards.
+- **Workspace templates**: scenario-oriented shells such as API workspace, ops workspace, document workspace, data workspace, or device workspace.
+- **Custom UI extensions**: focused components shipped with a scenario product, still using the common runtime contracts for tool calls, skill runs, approval, history, and audit.
 
 ## Development
 
@@ -271,6 +300,13 @@ The Alpha runtime exposes local HTTP endpoints for Studio and black-box verifica
 - Device operation trace and audit
 - Approval gates for medium/high-risk home actions
 
+### Milestone 4: Product Bundle Compiler
+
+- Scenario dependency declaration for runtime, UI, integrations, storage, and policy
+- Runtime module pruning and bundle manifest generation
+- Desktop and server/Docker packaging paths
+- Bundle-level smoke tests and eval checks before release
+
 ## Design Principles
 
 - **Local first**: development and Alpha validation should run on a local machine without cloud infrastructure.
@@ -283,15 +319,16 @@ The Alpha runtime exposes local HTTP endpoints for Studio and black-box verifica
 
 | Document | Description |
 |---|---|
-| [Requirements](doc/requirements.md) | MVP requirements, priority order, current progress |
 | [Technical Plan](melonOS%20技术方案.md) | Architecture, product layers, and technical direction |
 | [MVP Plan](melonOS%20MVP%20开发计划.md) | Milestones, timeline, acceptance criteria |
 | [melon Home Plan](melon%20Home%20全屋智能技术方案.md) | Home Assistant beta scenario design |
 | [Agents OS Feasibility](Agents%20OS%20可行性与产品方案.md) | Product positioning and staged strategy |
 
+The authoritative requirements and detailed design notes live in the Obsidian vault at `Melon OS/00 melonOS 专题索引.md`, with `02 melonOS MVP 需求与路线图.md` as the current execution source of truth.
+
 ## Contributing
 
-This repository is moving quickly. Before opening a large change, align it with the current milestone in [doc/requirements.md](doc/requirements.md).
+This repository is moving quickly. Before opening a large change, align it with the current milestone in the Obsidian `Melon OS/02 melonOS MVP 需求与路线图.md` note.
 
 Baseline checks before committing:
 
