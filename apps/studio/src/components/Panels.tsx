@@ -3,9 +3,10 @@ import type { PanelMessage, RegionedPanels } from '../lib/panels'
 interface PanelsProps {
   regions: RegionedPanels[]
   hasLayout: boolean
+  onPanelAction?: (action: string, params?: Record<string, any>) => void
 }
 
-export default function Panels({ regions, hasLayout }: PanelsProps) {
+export default function Panels({ regions, hasLayout, onPanelAction }: PanelsProps) {
   if (regions.length === 0 || regions.every(r => r.panels.length === 0)) {
     return (
       <div style={{ fontSize: 12, color: '#666', padding: 8 }}>
@@ -19,7 +20,7 @@ export default function Panels({ regions, hasLayout }: PanelsProps) {
     return (
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px', display: 'flex', flexWrap: 'wrap', gap: 8, alignContent: 'flex-start' }}>
         {regions.flatMap(r => r.panels).map((panel, i) => (
-          <PanelCard key={i} panel={panel} />
+          <PanelCard key={i} panel={panel} onPanelAction={onPanelAction} />
         ))}
       </div>
     )
@@ -38,13 +39,13 @@ export default function Panels({ regions, hasLayout }: PanelsProps) {
         flexShrink: 0,
       }}>
         {regions.filter(r => r.region === 'left').map(r => (
-          <RegionColumn key={r.region} region={r} width={220} />
+          <RegionColumn key={r.region} region={r} width={220} onPanelAction={onPanelAction} />
         ))}
         {regions.filter(r => r.region === 'main').map(r => (
-          <RegionColumn key={r.region} region={r} width={0} flexGrow />
+          <RegionColumn key={r.region} region={r} width={0} flexGrow onPanelAction={onPanelAction} />
         ))}
         {regions.filter(r => r.region === 'right').map(r => (
-          <RegionColumn key={r.region} region={r} width={220} />
+          <RegionColumn key={r.region} region={r} width={220} onPanelAction={onPanelAction} />
         ))}
       </div>
       {/* Bottom row */}
@@ -61,19 +62,29 @@ export default function Panels({ regions, hasLayout }: PanelsProps) {
             {r.region}
           </div>
           {r.panels.map((panel, i) => (
-            <PanelCard key={i} panel={panel} />
+            <PanelCard key={i} panel={panel} onPanelAction={onPanelAction} />
           ))}
         </div>
       ))}
       {/* Unknown regions */}
       {regions.filter(r => !['left', 'main', 'right', 'bottom'].includes(r.region)).map(r => (
-        <RegionColumn key={r.region} region={r} width={0} flexGrow />
+        <RegionColumn key={r.region} region={r} width={0} flexGrow onPanelAction={onPanelAction} />
       ))}
     </div>
   )
 }
 
-function RegionColumn({ region, width, flexGrow }: { region: RegionedPanels; width: number; flexGrow?: boolean }) {
+function RegionColumn({
+  region,
+  width,
+  flexGrow,
+  onPanelAction,
+}: {
+  region: RegionedPanels
+  width: number
+  flexGrow?: boolean
+  onPanelAction?: (action: string, params?: Record<string, any>) => void
+}) {
   return (
     <div style={{
       width: width || undefined,
@@ -91,13 +102,19 @@ function RegionColumn({ region, width, flexGrow }: { region: RegionedPanels; wid
         {region.region}
       </div>
       {region.panels.map((panel, i) => (
-        <PanelCard key={i} panel={panel} />
+        <PanelCard key={i} panel={panel} onPanelAction={onPanelAction} />
       ))}
     </div>
   )
 }
 
-function PanelCard({ panel }: { panel: PanelMessage }) {
+function PanelCard({
+  panel,
+  onPanelAction,
+}: {
+  panel: PanelMessage
+  onPanelAction?: (action: string, params?: Record<string, any>) => void
+}) {
   switch (panel.panel_type) {
     case 'status_card':
       return <StatusCardPanel panel={panel} />
@@ -106,7 +123,7 @@ function PanelCard({ panel }: { panel: PanelMessage }) {
     case 'citation':
       return <CitationPanel panel={panel} />
     case 'approval':
-      return <ApprovalPanel panel={panel} />
+      return <ApprovalPanel panel={panel} onPanelAction={onPanelAction} />
     case 'trace_timeline':
       return <TraceTimelinePanel panel={panel} />
     default:
@@ -146,6 +163,10 @@ function StatusCardPanel({ panel }: { panel: PanelMessage }) {
 }
 
 function ReportPanel({ panel }: { panel: PanelMessage }) {
+  const summary = panel.data.summary || ''
+  const storageWarning = panel.data.storage_warning || ''
+  const recommendation = panel.data.recommendation || ''
+
   return (
     <div style={{
       background: '#1e1e1e',
@@ -156,9 +177,26 @@ function ReportPanel({ panel }: { panel: PanelMessage }) {
       <div style={{ fontSize: 12, fontWeight: 600, color: '#60a5fa', marginBottom: 8 }}>
         {panel.title}
       </div>
-      <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.5, wordBreak: 'break-word' }}>
-        {panel.data.summary || panel.data.raw}
-      </div>
+      {summary && (
+        <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.5, wordBreak: 'break-word', marginBottom: storageWarning || recommendation ? 8 : 0 }}>
+          {summary}
+        </div>
+      )}
+      {storageWarning && (
+        <div style={{ fontSize: 12, color: '#f59e0b', lineHeight: 1.5, wordBreak: 'break-word', marginBottom: recommendation ? 8 : 0 }}>
+          {storageWarning}
+        </div>
+      )}
+      {recommendation && (
+        <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.5, wordBreak: 'break-word', borderTop: '1px solid #2a2a2a', paddingTop: 8 }}>
+          {recommendation}
+        </div>
+      )}
+      {!summary && !storageWarning && !recommendation && (
+        <div style={{ fontSize: 12, color: '#ccc', lineHeight: 1.5, wordBreak: 'break-word' }}>
+          {panel.data.raw}
+        </div>
+      )}
     </div>
   )
 }
@@ -200,7 +238,13 @@ function CitationPanel({ panel }: { panel: PanelMessage }) {
   )
 }
 
-function ApprovalPanel({ panel }: { panel: PanelMessage }) {
+function ApprovalPanel({
+  panel,
+  onPanelAction,
+}: {
+  panel: PanelMessage
+  onPanelAction?: (action: string, params?: Record<string, any>) => void
+}) {
   return (
     <div style={{
       background: '#1e1e1e',
@@ -214,6 +258,33 @@ function ApprovalPanel({ panel }: { panel: PanelMessage }) {
       <div style={{ fontSize: 12, color: '#ccc', wordBreak: 'break-all' }}>
         {panel.data.action || ''}
       </div>
+      <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>
+        Risk: <span style={{ color: panel.data.risk_level === 'high' ? '#f87171' : panel.data.risk_level === 'medium' ? '#f59e0b' : '#4ade80' }}>{panel.data.risk_level || 'unknown'}</span>
+        {' '}&middot; Scope: {panel.data.scope || 'unknown'}
+      </div>
+      {panel.actions && panel.actions.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {panel.actions.map(action => (
+            <button
+              key={action.action}
+              onClick={() => onPanelAction?.(action.action, action.params)}
+              disabled={!onPanelAction}
+              style={{
+                flex: 1,
+                padding: '4px 8px',
+                borderRadius: 4,
+                border: 'none',
+                background: action.action.endsWith('reject') ? '#ef4444' : '#22c55e',
+                color: '#fff',
+                cursor: onPanelAction ? 'pointer' : 'not-allowed',
+                fontSize: 12,
+              }}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

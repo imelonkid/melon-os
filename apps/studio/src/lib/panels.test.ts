@@ -3,6 +3,7 @@ import {
   extractCitations,
   routePanels,
   derivePanels,
+  parseLayout,
   viewTypeToPanelType,
   type UiLayoutConfig,
 } from './panels'
@@ -27,7 +28,7 @@ describe('extractCitations', () => {
 
   it('extracts multiple citations', () => {
     const summary =
-      'source_id=a path=docs/a.md title=A.md; source_id=b path=docs/b.md title=B.md'
+      'source_id=a path=docs/a.md title=A.md; source_id=b path=docs/b.md title=B.md source_id=a path=docs/a.md title=A.md'
     const citations = extractCitations(summary)
     expect(citations).toHaveLength(2)
     expect(citations[0].source_id).toBe('a')
@@ -84,6 +85,27 @@ const demoOpsLayout: UiLayoutConfig = {
 }
 
 describe('routePanels', () => {
+  it('parses real ui/layout.yaml content', () => {
+    const layout = parseLayout(`
+layout:
+  default: ops_workspace
+views:
+  - id: report
+    type: document
+    region: main
+  - id: status
+    type: table
+    region: right
+  - id: trace
+    type: task_graph
+    region: bottom
+`)
+
+    expect(layout).not.toBeNull()
+    expect(layout!.views).toHaveLength(3)
+    expect(layout!.views[0]).toEqual({ id: 'report', view_type: 'document', region: 'main' })
+  })
+
   it('groups panels by region from layout', () => {
     const traces = [
       makeTrace('[storage_status] status: warning'),
@@ -134,9 +156,10 @@ describe('routePanels', () => {
 
     expect(regions).toHaveLength(1)
     expect(regions[0].region).toBe('main')
-    expect(regions[0].panels.length).toBe(2)
+    expect(regions[0].panels.length).toBe(3)
     expect(regions[0].panels[0].panel_type).toBe('status_card')
     expect(regions[0].panels[1].panel_type).toBe('report')
+    expect(regions[0].panels[2].panel_type).toBe('trace_timeline')
   })
 
   it('produces empty panels for empty traces', () => {
@@ -156,6 +179,25 @@ describe('routePanels', () => {
     expect(bottomRegion!.panels.some(p => p.panel_type === 'trace_timeline')).toBe(true)
     expect(bottomRegion!.panels.filter(p => p.panel_type === 'trace_timeline')).toHaveLength(1)
   })
+
+  it('routes pending approvals from approval API data', () => {
+    const layout: UiLayoutConfig = {
+      views: [{ id: 'approval', view_type: 'approval', region: 'right' }],
+    }
+    const regions = routePanels(layout, [], [{
+      id: 'approval-1',
+      action: 'cleanup_temp_files',
+      risk_level: 'medium',
+      scope: 'workspace',
+      status: 'pending',
+    }])
+
+    const rightRegion = regions.find(r => r.region === 'right')
+    expect(rightRegion).toBeDefined()
+    expect(rightRegion!.panels).toHaveLength(1)
+    expect(rightRegion!.panels[0].panel_type).toBe('approval')
+    expect(rightRegion!.panels[0].data.action).toBe('cleanup_temp_files')
+  })
 })
 
 // --- derivePanels tests (fallback behavior) ---
@@ -163,24 +205,23 @@ describe('routePanels', () => {
 describe('derivePanels', () => {
   it('derives status_card from storage_status marker', () => {
     const panels = derivePanels([makeTrace('[storage_status] status: warning')])
-    expect(panels).toHaveLength(1)
+    expect(panels.some(p => p.panel_type === 'status_card')).toBe(true)
     expect(panels[0].panel_type).toBe('status_card')
     expect(panels[0].data.status).toBe('warning')
   })
 
   it('derives report from inspection_summary marker', () => {
     const panels = derivePanels([makeTrace('[inspection_summary] Generated checklist')])
-    expect(panels).toHaveLength(1)
-    expect(panels[0].panel_type).toBe('report')
+    expect(panels.some(p => p.panel_type === 'report')).toBe(true)
   })
 
   it('derives citation with full source info', () => {
     const summary =
       '[source_reference] source_id=runbook path=docs/runbook.md title=runbook.md'
     const panels = derivePanels([makeTrace(summary)])
-    expect(panels).toHaveLength(1)
-    expect(panels[0].panel_type).toBe('citation')
-    const citations = panels[0].data.citations
+    const citationPanel = panels.find(p => p.panel_type === 'citation')
+    expect(citationPanel).toBeDefined()
+    const citations = citationPanel!.data.citations
     expect(citations).toHaveLength(1)
     expect(citations[0].source_id).toBe('runbook')
     expect(citations[0].path).toBe('docs/runbook.md')
@@ -188,8 +229,13 @@ describe('derivePanels', () => {
   })
 
   it('derives approval from approval event type', () => {
-    const panels = derivePanels([makeTrace('approval needed', 'approval')])
-    expect(panels).toHaveLength(1)
-    expect(panels[0].panel_type).toBe('approval')
+    const panels = derivePanels([], [{
+      id: 'approval-1',
+      action: 'cleanup_temp_files',
+      risk_level: 'medium',
+      scope: 'workspace',
+      status: 'pending',
+    }])
+    expect(panels.some(p => p.panel_type === 'approval')).toBe(true)
   })
 })

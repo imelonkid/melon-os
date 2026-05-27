@@ -1,4 +1,5 @@
-import type { TraceEvent } from './api'
+import { parse as parseYaml } from 'yaml'
+import type { ApprovalItem, TraceEvent } from './api'
 
 export interface PanelMessage {
   panel_type: 'status_card' | 'report' | 'citation' | 'approval' | 'trace_timeline'
@@ -35,9 +36,11 @@ export interface RegionedPanels {
   panels: PanelMessage[]
 }
 
+type PanelType = PanelMessage['panel_type']
+
 // --- View type -> panel type mapping ---
 
-const VIEW_TYPE_TO_PANEL: Record<string, PanelMessage['panel_type']> = {
+const VIEW_TYPE_TO_PANEL: Record<string, PanelType> = {
   document: 'report',
   table: 'status_card',
   task_graph: 'trace_timeline',
@@ -48,7 +51,7 @@ const VIEW_TYPE_TO_PANEL: Record<string, PanelMessage['panel_type']> = {
 /**
  * Map a layout view_type to the panel type it should render.
  */
-export function viewTypeToPanelType(viewType: string): PanelMessage['panel_type'] | null {
+export function viewTypeToPanelType(viewType: string): PanelType | null {
   return VIEW_TYPE_TO_PANEL[viewType] ?? null
 }
 
@@ -68,18 +71,19 @@ function extractStatus(summary: string): string {
  * Format: source_id=X path=Y title=Z
  */
 export function extractCitations(summary: string): CitationEntry[] {
-  const citations: CitationEntry[] = []
+  const citations = new Map<string, CitationEntry>()
   // Match source_id, path, title - title can contain dots (filenames) but stops at ] or whitespace
   const re = /source_id=(\S+)\s+path=(\S+)\s+title=([^\s\]]+)/g
   let m
   while ((m = re.exec(summary)) !== null) {
-    citations.push({
+    const entry = {
       source_id: m[1],
       path: m[2],
       title: m[3].replace(/[.,;]+$/, ''), // trim trailing punctuation
-    })
+    }
+    citations.set(`${entry.source_id}:${entry.path}:${entry.title}`, entry)
   }
-  return citations
+  return Array.from(citations.values())
 }
 
 function extractRecommendation(summary: string): string {
@@ -91,13 +95,7 @@ function extractPlainText(summary: string): string {
   return summary.replace(/\[[\w_]+\]\s*/g, '').trim()
 }
 
-// --- Derive panels from traces (layout-agnostic) ---
-
-/**
- * Derive PanelMessage[] from trace events by parsing known trace markers.
- * Used as fallback when no ui/layout.yaml is present.
- */
-export function derivePanels(traces: TraceEvent[]): PanelMessage[] {
+function buildStatusPanels(traces: TraceEvent[]): PanelMessage[] {
   const panels: PanelMessage[] = []
 
   for (const t of traces) {
@@ -127,34 +125,112 @@ export function derivePanels(traces: TraceEvent[]): PanelMessage[] {
         data: { status: extractStatus(summary), raw: summary },
       })
     }
+  }
 
-    if (summary.includes('[source_reference]')) {
-      const citations = extractCitations(summary)
-      const recommendation = extractRecommendation(summary)
-      panels.push({
-        panel_type: 'citation',
-        title: 'Knowledge Sources',
-        data: { citations, recommendation, raw: summary },
-      })
+  return panels
+}
+
+function buildCitationPanels(traces: TraceEvent[]): PanelMessage[] {
+  const citationMap = new Map<string, CitationEntry>()
+  let recommendation = ''
+  let raw = ''
+
+  for (const t of traces) {
+    const summary = t.summary || ''
+    if (!summary.includes('[source_reference]')) continue
+
+    for (const citation of extractCitations(summary)) {
+      citationMap.set(`${citation.source_id}:${citation.path}:${citation.title}`, citation)
     }
+    recommendation = extractRecommendation(summary) || recommendation
+    raw = summary
+  }
 
-    if (summary.includes('[inspection_summary]') || summary.includes('[actionable_recommendation]')) {
-      panels.push({
-        panel_type: 'report',
-        title: 'Inspection Report',
-        data: { summary: extractPlainText(summary), raw: summary },
-      })
+  const citations = Array.from(citationMap.values())
+  if (citations.length === 0 && !recommendation) return []
+
+  return [{
+    panel_type: 'citation',
+    title: 'Knowledge Sources',
+    data: { citations, recommendation, raw },
+  }]
+}
+
+function buildReportPanels(traces: TraceEvent[]): PanelMessage[] {
+  const summaries: string[] = []
+  let storageWarning = ''
+  let recommendation = ''
+  let raw = ''
+
+  for (const t of traces) {
+    const summary = t.summary || ''
+    if (summary.includes('[inspection_summary]')) {
+      summaries.push(extractPlainText(summary))
+      raw = summary
     }
-
-    if (t.event_type === 'approval') {
-      panels.push({
-        panel_type: 'approval',
-        title: 'Approval Request',
-        data: { action: summary, input_ref: t.input_ref, output_ref: t.output_ref },
-      })
+    if (summary.includes('[storage_status]')) {
+      storageWarning = extractPlainText(summary)
+    }
+    if (summary.includes('[actionable_recommendation]')) {
+      recommendation = extractRecommendation(summary) || extractPlainText(summary)
+      raw = summary
     }
   }
 
+  if (summaries.length === 0 && !storageWarning && !recommendation) return []
+
+  return [{
+    panel_type: 'report',
+    title: 'Inspection Report',
+    data: {
+      summary: summaries.join('\n'),
+      storage_warning: storageWarning,
+      recommendation,
+      raw,
+    },
+  }]
+}
+
+function buildApprovalPanels(approvals: ApprovalItem[]): PanelMessage[] {
+  return approvals.map(approval => ({
+    panel_type: 'approval',
+    title: 'Approval Request',
+    data: {
+      id: approval.id,
+      action: approval.action,
+      risk_level: approval.risk_level,
+      scope: approval.scope,
+      status: approval.status,
+    },
+    actions: [
+      { label: 'Approve', action: 'approval.approve', params: { approval_id: approval.id } },
+      { label: 'Reject', action: 'approval.reject', params: { approval_id: approval.id } },
+    ],
+  }))
+}
+
+function buildTraceTimelinePanel(traces: TraceEvent[]): PanelMessage[] {
+  if (traces.length === 0) return []
+  return [{
+    panel_type: 'trace_timeline',
+    title: 'Trace Timeline',
+    data: { traces },
+  }]
+}
+
+// --- Derive panels from traces (layout-agnostic) ---
+
+/**
+ * Derive PanelMessage[] from trace events by parsing known trace markers.
+ * Used as fallback when no ui/layout.yaml is present.
+ */
+export function derivePanels(traces: TraceEvent[], approvals: ApprovalItem[] = []): PanelMessage[] {
+  const panels: PanelMessage[] = []
+  panels.push(...buildStatusPanels(traces))
+  panels.push(...buildReportPanels(traces))
+  panels.push(...buildCitationPanels(traces))
+  panels.push(...buildApprovalPanels(approvals))
+  panels.push(...buildTraceTimelinePanel(traces))
   return panels
 }
 
@@ -165,86 +241,22 @@ export function derivePanels(traces: TraceEvent[]): PanelMessage[] {
  * This routes trace data into the panels specified by the layout.
  */
 function collectForPanel(
-  panelType: PanelMessage['panel_type'],
+  panelType: PanelType,
   traces: TraceEvent[],
+  approvals: ApprovalItem[],
 ): PanelMessage[] {
-  const panels: PanelMessage[] = []
-
-  for (const t of traces) {
-    const summary = t.summary || ''
-
-    switch (panelType) {
-      case 'status_card': {
-        if (summary.includes('[service_status]')) {
-          panels.push({
-            panel_type: 'status_card',
-            title: 'Service Status',
-            data: { status: extractStatus(summary), raw: summary },
-          })
-        }
-        if (summary.includes('[storage_status]')) {
-          const status = extractStatus(summary)
-          panels.push({
-            panel_type: 'status_card',
-            title: 'Storage Status',
-            data: { status, raw: summary, severity: status === 'warning' ? 'warning' : status === 'error' ? 'error' : 'ok' },
-          })
-        }
-        if (summary.includes('[network_status]')) {
-          panels.push({
-            panel_type: 'status_card',
-            title: 'Network Status',
-            data: { status: extractStatus(summary), raw: summary },
-          })
-        }
-        break
-      }
-      case 'report': {
-        if (summary.includes('[inspection_summary]') || summary.includes('[actionable_recommendation]')) {
-          panels.push({
-            panel_type: 'report',
-            title: 'Inspection Report',
-            data: { summary: extractPlainText(summary), raw: summary },
-          })
-        }
-        break
-      }
-      case 'citation': {
-        if (summary.includes('[source_reference]')) {
-          const citations = extractCitations(summary)
-          const recommendation = extractRecommendation(summary)
-          panels.push({
-            panel_type: 'citation',
-            title: 'Knowledge Sources',
-            data: { citations, recommendation, raw: summary },
-          })
-        }
-        break
-      }
-      case 'trace_timeline': {
-        if (panels.length === 0) {
-          panels.push({
-            panel_type: 'trace_timeline',
-            title: 'Trace Timeline',
-            data: { traces },
-          })
-        }
-        break
-      }
-      case 'approval': {
-        if (t.event_type === 'approval') {
-          panels.push({
-            panel_type: 'approval',
-            title: 'Approval Request',
-            data: { action: summary, input_ref: t.input_ref, output_ref: t.output_ref },
-          })
-        }
-        break
-      }
-    }
+  switch (panelType) {
+    case 'status_card':
+      return buildStatusPanels(traces)
+    case 'report':
+      return buildReportPanels(traces)
+    case 'citation':
+      return buildCitationPanels(traces)
+    case 'approval':
+      return buildApprovalPanels(approvals)
+    case 'trace_timeline':
+      return buildTraceTimelinePanel(traces)
   }
-
-  return panels
 }
 
 /**
@@ -257,10 +269,11 @@ function collectForPanel(
 export function routePanels(
   layout: UiLayoutConfig | null,
   traces: TraceEvent[],
+  approvals: ApprovalItem[] = [],
 ): RegionedPanels[] {
   if (!layout || layout.views.length === 0) {
     // Fallback: no layout, derive panels as single region
-    const derived = derivePanels(traces)
+    const derived = derivePanels(traces, approvals)
     return derived.length > 0 ? [{ region: 'main', panels: derived }] : []
   }
 
@@ -273,10 +286,10 @@ export function routePanels(
 
     const collected = view.view_type === 'table'
       ? [
-          ...collectForPanel('status_card', traces),
-          ...collectForPanel('citation', traces),
+          ...collectForPanel('status_card', traces, approvals),
+          ...collectForPanel('citation', traces, approvals),
         ]
-      : collectForPanel(panelType, traces)
+      : collectForPanel(panelType, traces, approvals)
     if (collected.length === 0) continue
 
     if (!regionMap.has(region)) {
@@ -309,10 +322,8 @@ export function routePanels(
  */
 export function parseLayout(yamlContent: string): UiLayoutConfig | null {
   try {
-    // Use the global yaml parser (caller must provide parsed object)
-    // This is a simple identity - actual parsing done by caller with yaml package
-    const parsed = JSON.parse(yamlContent) as { views?: unknown[] }
-    if (!parsed.views || !Array.isArray(parsed.views)) {
+    const parsed = parseYaml(yamlContent) as { views?: unknown[] } | null
+    if (!parsed || !parsed.views || !Array.isArray(parsed.views)) {
       return null
     }
     return {

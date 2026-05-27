@@ -319,12 +319,11 @@ The Alpha runtime exposes local HTTP endpoints for Studio and black-box verifica
 
 | Document | Description |
 |---|---|
-| [Technical Plan](melonOS%20技术方案.md) | Architecture, product layers, and technical direction |
-| [MVP Plan](melonOS%20MVP%20开发计划.md) | Milestones, timeline, acceptance criteria |
-| [melon Home Plan](melon%20Home%20全屋智能技术方案.md) | Home Assistant beta scenario design |
-| [Agents OS Feasibility](Agents%20OS%20可行性与产品方案.md) | Product positioning and staged strategy |
+| [English README](README.md) | GitHub-facing overview, architecture, commands, and status |
+| [Chinese README](README.zh-CN.md) | Chinese project overview and quick start |
+| [Agent Instructions](AGENTS.md) | Repository-specific instructions for AI coding agents |
 
-The authoritative requirements and detailed design notes live in the Obsidian vault at `Melon OS/00 melonOS 专题索引.md`, with `02 melonOS MVP 需求与路线图.md` as the current execution source of truth.
+The authoritative requirements and detailed design notes live in the Obsidian vault at `Melon OS/00 melonOS 专题索引.md`, with `02 melonOS MVP 需求与路线图.md` as the current execution source of truth. Migrated planning documents are intentionally not kept in the repository root.
 
 ## Contributing
 

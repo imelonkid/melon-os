@@ -280,12 +280,11 @@ Alpha runtime 暴露本地 HTTP endpoints，供 Studio 和黑盒验证使用：
 
 | 文档 | 说明 |
 |---|---|
-| [Technical Plan](melonOS%20技术方案.md) | 架构、产品分层和技术方向 |
-| [MVP Plan](melonOS%20MVP%20开发计划.md) | 里程碑、时间线和验收标准 |
-| [melon Home Plan](melon%20Home%20全屋智能技术方案.md) | Home Assistant beta scenario design |
-| [Agents OS Feasibility](Agents%20OS%20可行性与产品方案.md) | 产品定位和阶段策略 |
+| [English README](README.md) | GitHub-facing overview, architecture, commands, and status |
+| [Chinese README](README.zh-CN.md) | 中文项目概览和快速开始 |
+| [Agent Instructions](AGENTS.md) | AI coding agent 的仓库级工作说明 |
 
-权威需求和详细设计在 Obsidian vault 的 `Melon OS/00 melonOS 专题索引.md` 中入口化维护，其中 `02 melonOS MVP 需求与路线图.md` 是当前推进项目的执行依据。
+权威需求和详细设计在 Obsidian vault 的 `Melon OS/00 melonOS 专题索引.md` 中入口化维护，其中 `02 melonOS MVP 需求与路线图.md` 是当前推进项目的执行依据。已迁移的规划文档不再保留在仓库根目录。
 
 ## 贡献
 

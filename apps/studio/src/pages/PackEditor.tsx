@@ -7,8 +7,7 @@ import {
   type TraceEvent, type ApprovalItem, type AuditLogEntry, type EvalSummary
 } from '../lib/api'
 import Panels from '../components/Panels'
-import { routePanels, type UiLayoutConfig, type RegionedPanels } from '../lib/panels'
-import { parse as parseYaml } from 'yaml'
+import { parseLayout, routePanels, type UiLayoutConfig, type RegionedPanels } from '../lib/panels'
 
 const RUNTIME_URL = ''
 
@@ -103,26 +102,7 @@ export default function PackEditor() {
   // Parse ui/layout.yaml when files are loaded
   useEffect(() => {
     const layoutContent = files.get('ui/layout.yaml')
-    if (layoutContent) {
-      try {
-        const parsed = parseYaml(layoutContent) as { views?: unknown[] }
-        if (parsed.views && Array.isArray(parsed.views)) {
-          setLayoutConfig({
-            views: parsed.views.map((v: any) => ({
-              id: String(v.id || ''),
-              view_type: String(v.type || v.view_type || ''),
-              region: v.region ? String(v.region) : undefined,
-            })),
-          })
-        } else {
-          setLayoutConfig(null)
-        }
-      } catch {
-        setLayoutConfig(null)
-      }
-    } else {
-      setLayoutConfig(null)
-    }
+    setLayoutConfig(layoutContent ? parseLayout(layoutContent) : null)
   }, [files])
 
   // Discover pack ID from URL or fetch from packs list
@@ -296,6 +276,17 @@ export default function PackEditor() {
       alert(e?.message || 'Failed to resolve approval')
     }
   }, [taskId, refreshTask])
+
+  const handlePanelAction = useCallback((action: string, params?: Record<string, any>) => {
+    const approvalId = typeof params?.approval_id === 'string' ? params.approval_id : ''
+    if (!approvalId) return
+    if (action === 'approval.approve') {
+      handleApproval(approvalId, true)
+    }
+    if (action === 'approval.reject') {
+      handleApproval(approvalId, false)
+    }
+  }, [handleApproval])
 
   const handleRunEval = useCallback(async () => {
     if (!taskId) return
@@ -814,8 +805,8 @@ export default function PackEditor() {
 
               {/* Panels tab */}
               {debugTab === 'panels' && (() => {
-                const regionedPanels: RegionedPanels[] = routePanels(layoutConfig, traces)
-                return <Panels regions={regionedPanels} hasLayout={!!layoutConfig} />
+                const regionedPanels: RegionedPanels[] = routePanels(layoutConfig, traces, approvals)
+                return <Panels regions={regionedPanels} hasLayout={!!layoutConfig} onPanelAction={handlePanelAction} />
               })()}
             </div>
 
